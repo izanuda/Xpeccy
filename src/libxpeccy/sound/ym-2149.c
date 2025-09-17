@@ -44,14 +44,29 @@ void ym_wr(aymChip* chip, int adr, int val) {
 extern sndPair ay_mix_stereo(int, int, int, int);
 
 int ym_chan_vol(aymChip* ay, aymChan* ch) {
-	int vol;
-	if ((ch->tdis || ch->lev) && (ch->ndis || ay->chanN.lev)) {
-		vol = ch->een ? ay->chanE.vol : (ch->ndis && !ch->tdis && (ch->per < 0x60)) ? 0 : ch->vol;
+	int vol = 0;
+#if 1
+	int mixlev = (ch->tdis || ch->lev) && (ch->ndis || ay->chanN.lev);
+	if (ch->een) {
+		if (mixlev) {
+			vol = ymDACvol[ay->chanE.vol & 0x1f];
+			if (ch->per < 0x60) vol >>= 1;
+		}
+	} else {
+		if ((ch->per < 0x60) || mixlev) {
+			vol = ymDACvol[ch->vol & 0x1f];
+		}
+	}
+#else
+	int lev = (ch->per < 0x60) ? 1 : ch->lev;
+	if ((ch->tdis || lev) && (ch->ndis || ay->chanN.lev)) {
+		vol = ch->een ? ay->chanE.vol : (ch->ndis && !ch->tdis && !lev) ? 0 : ch->vol;
 	} else {
 		vol = 0;
 	}
 	vol = ymDACvol[vol & 0x1f];						// YM:5-bit DAC volume
 //	if (ch->per < 0x60) vol >>= 1;
+#endif
 	return vol;
 }
 

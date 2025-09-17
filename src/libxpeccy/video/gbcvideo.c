@@ -1,9 +1,7 @@
-#include <stdlib.h>
 #include <string.h>
 
 #include "video.h"
 
-#include <stdio.h>
 #include <assert.h>
 
 // listen here, you little sh*t... why don't work properly?

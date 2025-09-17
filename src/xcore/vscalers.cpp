@@ -1,5 +1,4 @@
 // #include <math.h>
-#include <string.h>
 
 #include "xcore.h"
 

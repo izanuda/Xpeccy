@@ -2,7 +2,6 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 
 Memory* memCreate() {
 	Memory* mem = (Memory*)malloc(sizeof(Memory));

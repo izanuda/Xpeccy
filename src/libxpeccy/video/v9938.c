@@ -1,5 +1,4 @@
 #include "video.h"
-#include "vidcommon.h"
 
 #include <stdio.h>
 #include <string.h>

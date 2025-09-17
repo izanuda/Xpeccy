@@ -1,7 +1,5 @@
 #include "xcore.h"
 
-#include <stdio.h>
-
 xLayout* findLayout(std::string nm) {
 	xLayout* res = NULL;
 	for (int i = 0; i < conf.layList.size(); i++) {

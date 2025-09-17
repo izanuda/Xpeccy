@@ -1,14 +1,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
 #include <fstream>
 #include <math.h>
 #include <sys/stat.h>
 
 #include "xcore.h"
 #include "../xgui/xgui.h"
-#include "sound.h"
 #include "filer.h"
 #include "gamepad.h"
 

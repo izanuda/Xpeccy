@@ -7,59 +7,145 @@
 
 // labels
 
-void clear_labels() {
-	conf.prof.cur->labels.clear();
-	conf.prof.cur->labmap.ram.clear();
-	conf.prof.cur->labmap.rom.clear();
-	conf.prof.cur->labmap.cpu.clear();
+xLabelSet* createLabelSet(QString name) {
+	xLabelSet* set = new xLabelSet;
+	set->name = name;
+	set->list.clear();
+	conf.prof.cur->labsets.append(set);
+	return set;
 }
 
-void del_label(QString name) {
-	if (!conf.prof.cur->labels.contains(name)) return;
-	xAdr xadr = conf.prof.cur->labels[name];
-	conf.prof.cur->labels.remove(name);
-	switch(xadr.type) {
-		case MEM_RAM: conf.prof.cur->labmap.ram.remove(xadr.abs); break;
-		case MEM_ROM: conf.prof.cur->labmap.rom.remove(xadr.abs); break;
-		default: conf.prof.cur->labmap.cpu.remove(xadr.adr); break;
+// return pointer to existing labelset for given name, or nullptr if doesn't exist
+xLabelSet* findLabelSet(QString name) {
+	xLabelSet* ptr = nullptr;
+	xLabelSet* res = nullptr;
+	foreach (ptr, conf.prof.cur->labsets) {
+		if (ptr->name == name) {
+			res = ptr;
+		}
+	}
+	return res;
+}
+
+int delLabelSet(QString name) {
+	int res = 0;
+	xLabelSet* cur = conf.prof.cur->curlabset;
+	xLabelSet* ptr;
+	for (int i = conf.prof.cur->labsets.size() - 1; i >= 0; i--) {
+		ptr = conf.prof.cur->labsets.at(i);
+		if (ptr->name == name) {
+			conf.prof.cur->labsets.removeAt(i);
+			if (cur == ptr) {		// delete current?
+				conf.prof.cur->curlabset = conf.prof.cur->labsets.size() ? conf.prof.cur->labsets.at(0) : nullptr;
+			}
+			delete(ptr);
+			res++;
+		}
+	}
+	return res;
+}
+
+// returns pointer to existing labels set for given name, or add new labelset and return its pointer
+xLabelSet* newLabelSet(QString name) {
+	xLabelSet* res = findLabelSet(name);
+	if (!res) {
+		res = createLabelSet(name);
+	}
+	return res;
+}
+
+// create conf.prof.cur->labmap from current labset
+void map_labels() {
+	xLabelSet* set = conf.prof.cur->curlabset;
+	conf.prof.cur->labmap.clear();
+	if (set) {
+		xAdr xadr;
+		QString nm;
+		foreach(nm, set->list.keys()) {
+			xadr = set->list[nm];
+			conf.prof.cur->labmap[xadr.type][xadr.abs] = nm;
+		}
 	}
 }
 
-void add_label(xAdr xadr, QString name) {
-	if (conf.prof.cur->labels.contains(name))
-		del_label(name);
-	conf.prof.cur->labels[name] = xadr;
-	switch (xadr.type) {
-		case MEM_RAM: conf.prof.cur->labmap.ram[xadr.abs] = name; break;
-		case MEM_ROM: conf.prof.cur->labmap.rom[xadr.abs] = name; break;
-		default: conf.prof.cur->labmap.cpu[xadr.adr] = name; break;
+void setLabelSet(xLabelSet* set) {
+	conf.prof.cur->curlabset = set;
+	map_labels();			// recreate labmap
+}
+
+xLabelSet* setLabelSet(QString path) {
+	xLabelSet* set = findLabelSet(path);
+	if (set) {
+		setLabelSet(set);
+	}
+	return set;
+}
+
+void clear_labels() {
+	xLabelSet* set = conf.prof.cur->curlabset;
+	if (set) {
+		set->list.clear();
+		conf.prof.cur->labmap.clear();
+	}
+}
+
+void clear_all_labels() {
+	while(!conf.prof.cur->labsets.isEmpty()) {
+		free(conf.prof.cur->labsets.first());
+		conf.prof.cur->labsets.takeFirst();
+	}
+}
+
+void del_label(QString name) {
+	xLabelSet* set = conf.prof.cur->curlabset;
+	if (set) {
+		if (set->list.contains(name)) {
+			xAdr xadr = set->list[name];
+			set->list.remove(name);
+			conf.prof.cur->labmap[xadr.type].remove(xadr.abs);
+		}
+	}
+}
+
+void add_label(xAdr xadr, QString name, xLabelSet* set) {
+	if (!set) {
+		set = conf.prof.cur->curlabset;
+	}
+	if (!set) {				// if no current labset
+		set = newLabelSet("noname");	// new internal labset
+		setLabelSet(set);
+	}
+	if (set) {
+		if (set->list.contains(name))
+			del_label(name);
+		set->list[name] = xadr;
+		conf.prof.cur->labmap[xadr.type][xadr.abs] = name;
 	}
 }
 
 QString find_label(xAdr xadr) {
 	QString lab;
-	if (conf.dbg.labels) {
-		switch(xadr.type) {
-			case MEM_RAM:
-				if (conf.prof.cur->labmap.ram.contains(xadr.abs))
-					lab = conf.prof.cur->labmap.ram[xadr.abs];
-				break;
-			case MEM_ROM:
-				if (conf.prof.cur->labmap.rom.contains(xadr.abs))
-					lab = conf.prof.cur->labmap.rom[xadr.abs];
-				break;
-			default:
-/*				if (conf.prof.cur->labmap.ram.contains(xadr.abs)) {
-					lab = conf.prof.cur->labmap.ram[xadr.abs];
-				} else if (conf.prof.cur->labmap.rom.contains(xadr.abs)) {
-					lab = conf.prof.cur->labmap.rom[xadr.abs];
-				} else */ if (conf.prof.cur->labmap.cpu.contains(xadr.adr)) {
-					lab = conf.prof.cur->labmap.cpu[xadr.adr];
-				}
-				break;
+	xLabelSet* set = conf.prof.cur->curlabset;
+	if (set) {
+		if (conf.prof.cur->labmap.contains(xadr.type)) {
+			if (conf.prof.cur->labmap[xadr.type].contains(xadr.abs)) {
+				lab = conf.prof.cur->labmap[xadr.type][xadr.abs];
+			}
 		}
 	}
 	return lab;
+}
+
+xAdr find_label(QString nm) {
+	xAdr xadr;
+	xadr.type = -1;
+	xLabelSet* set = conf.prof.cur->curlabset;
+	if (set) {
+		if (set->list.contains(nm)) {
+			xadr = set->list.value(nm);
+		}
+	}
+	return xadr;
 }
 
 int loadLabels(const char* fn) {
@@ -73,6 +159,8 @@ int loadLabels(const char* fn) {
 	if (path.isEmpty())
 		path = QFileDialog::getOpenFileName(NULL, "Load SJASM labels",QString(),QString(),nullptr,QFileDialog::DontUseNativeDialog);
 	if (!path.isEmpty()) {
+		xLabelSet* set = newLabelSet(QFileInfo(path).fileName());
+		setLabelSet(set);
 		clear_labels();
 		file.setFileName(path);
 		if (file.open(QFile::ReadOnly)) {
@@ -138,18 +226,21 @@ int saveLabels(const char* fn) {
 	QFile file;
 	QString path(fn);
 	if (path.isEmpty())
-		path = QFileDialog::getSaveFileName(NULL, "save labels",QString(),QString(),nullptr,QFileDialog::DontUseNativeDialog);
+		path = QFileDialog::getSaveFileName(NULL, "Save labels",QString(),QString(),nullptr,QFileDialog::DontUseNativeDialog);
 	if (path.isEmpty()) {
 		res = 0;
 	} else {
 		file.setFileName(path);
 		if (file.open(QFile::WriteOnly)) {
-			keys = conf.prof.cur->labels.keys();
-			foreach(key, keys) {
-				xadr = conf.prof.cur->labels[key];
-				line = (xadr.type == MEM_RAM) ? gethexbyte(xadr.abs >> 14) : "FF";
-				line.append(QString(":%0 %1\n").arg(gethexword(xadr.abs & 0x3fff), key));
-				file.write(line.toUtf8());
+			xLabelSet* set = conf.prof.cur->curlabset;
+			if (set) {
+				keys = set->list.keys();
+				foreach(key, keys) {
+					xadr = set->list.value(key);
+					line = (xadr.type == MEM_RAM) ? gethexbyte(xadr.abs >> 14) : "FF";
+					line.append(QString(":%0 %1\n").arg(gethexword(xadr.abs & 0x3fff), key));
+					file.write(line.toUtf8());
+				}
 			}
 			file.close();
 		} else {
@@ -162,38 +253,25 @@ int saveLabels(const char* fn) {
 // comments
 
 void add_comment(xAdr xadr, QString str) {
-	// printf("%s:%i\txadr{%i,%X,%X}\n",__FUNCTION__,__LINE__,xadr.type,xadr.adr,xadr.abs);
-	switch(xadr.type) {
-		case MEM_RAM: conf.prof.cur->comments.ram[xadr.abs] = str; break;
-		case MEM_ROM: conf.prof.cur->comments.rom[xadr.abs] = str; break;
-	}
+	conf.prof.cur->commap[xadr.type][xadr.abs] = str;
 }
 
 void del_comment(xAdr xadr) {
-	switch(xadr.type) {
-		case MEM_RAM: conf.prof.cur->comments.ram.remove(xadr.abs); break;
-		case MEM_ROM: conf.prof.cur->comments.rom.remove(xadr.abs); break;
+	if (conf.prof.cur->commap.contains(xadr.type)) {
+		conf.prof.cur->commap[xadr.type].remove(xadr.abs);
 	}
 }
 
 QString find_comment(xAdr xadr) {
 	QString str;
-	switch(xadr.type) {
-		case MEM_RAM:
-			if (conf.prof.cur->comments.ram.contains(xadr.abs)) {
-				str = conf.prof.cur->comments.ram[xadr.abs];
-			}
-			break;
-		case MEM_ROM:
-			if (conf.prof.cur->comments.rom.contains(xadr.abs)) {
-				str = conf.prof.cur->comments.rom[xadr.abs];
-			}
-			break;
+	if (conf.prof.cur->commap.contains(xadr.type)) {
+		if (conf.prof.cur->commap[xadr.type].contains(xadr.abs)) {
+			str = conf.prof.cur->commap[xadr.type][xadr.abs];
+		}
 	}
 	return str;
 }
 
 void clear_comments() {
-	conf.prof.cur->comments.ram.clear();
-	conf.prof.cur->comments.rom.clear();
+	conf.prof.cur->commap.clear();
 }

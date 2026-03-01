@@ -47,6 +47,7 @@ void z80_reset(CPU* cpu) {
 	cpu->intrq = 0;
 	cpu->inten = Z80_NMI;	// NMI allways enabled, INT is controlled by ei/di
 	cpu->flgWAIT = 0;
+	cpu->flgRetBRK = 0;
 }
 
 // https://sinclair.wiki.zxnet.co.uk/wiki/Contended_memory
@@ -100,6 +101,9 @@ int z80_int(CPU* cpu) {
 				cpu->flgPV = 0;
 			}
 			cpu->opTab = npTab;
+			if (cpu->flgRetBRK) {
+				cpu->regCallCnt++;
+			}
 			switch(cpu->regIM) {
 				case 0:
 					cpu->t = 2;
@@ -263,7 +267,7 @@ xMnem z80_mnem(CPU* cpu, int qadr, cbdmr mrd, void* data) {
 		} else if ((op & 0xe7) == 0x20) {							// jr cc
 			mn.cond = 1;
 			//mn.met = (cpu->f & z80_cnd[(op >> 4) & 1] ? 0 : 1);
-			mn.met = (op & 0x10) ? !cpu->flgZ : !cpu->flgC;
+			mn.met = (op & 0x10) ? !cpu->flgC : !cpu->flgZ;
 			if (op & 8)
 				mn.met ^= 1;
 		}
@@ -441,5 +445,9 @@ void z80_set_regs(CPU* cpu, xRegBunch bunch) {
 }
 
 // test:
-static cpuCore z80core = {CPU_Z80, 0,"Z80ext", z80RegTab, NULL, z80_reset, z80_exec, z80_asm, z80_mnem, z80_get_regs, z80_set_regs, z80_get_flag, z80_set_flag};
-EXPORTDLL cpuCore* getCore() {return &z80core;}
+static cpuCore z80core[] = {
+	{CPU_Z80, CPUG_X80, 0,"Z80ext", z80RegTab, 16, 8, NULL, z80_reset, z80_exec, z80_asm, z80_mnem, z80_get_regs, z80_set_regs, z80_get_flag, z80_set_flag},
+	{CPU_NONE, CPUG_NONE, 0, "none", NULL, 8, 8, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL}
+};
+
+EXPORTDLL cpuCore* getCore() {return z80core;}

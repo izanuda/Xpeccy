@@ -15,6 +15,8 @@
 int bytesPerLine = 768;
 int greyScale = 0;
 int noflic = 0;
+int noflicMode = 0;
+float noflicGamma = 2.2f;
 int scanlines = 0;
 
 static unsigned char bufa[SCRBUF_SIZE];
@@ -32,7 +34,10 @@ int rigSkip = 0;
 int topSkip = 0;
 int botSkip = 0;
 
-unsigned char pscr[SCRBUF_SIZE];		// previous screen (raw)
+// Ring buffer is used for antiflicker to store the history of frames.
+// At least 5 frames are required to perform basic 3-Color mode detection.
+#define RING_FRAMES 5
+unsigned char pscr[SCRBUF_SIZE*RING_FRAMES] __attribute__((aligned(4)));
 
 #if !defined(USEOPENGL)
 static int xpos = 0;
@@ -129,7 +134,7 @@ void vid_line(Video* vid) {
 	}
 #endif
 	if (lefSkip > 0)
-		vid_fill_black(vid->ray.lptr, bytesPerLine);
+		vid_fill_black(vid->ray.lptr, lefSkip);
 	vid->ray.ptr = vid->ray.lptr + lefSkip;
 }
 
@@ -208,6 +213,8 @@ Video* vidCreate(cbxrd cb, cbirq ci, void* dptr) {
 	vid->inten = 0x01;		// FRAME INT for all
 
 	vid->ula = ula_create();
+	vid->txt7220 = upd7220_create();
+	vid->grf7220 = upd7220_create();
 
 	vid_set_border(vid, 0.5);
 
@@ -229,6 +236,8 @@ Video* vidCreate(cbxrd cb, cbirq ci, void* dptr) {
 
 void vidDestroy(Video* vid) {
 	ula_destroy(vid->ula);
+	upd7220_destroy(vid->txt7220);
+	upd7220_destroy(vid->grf7220);
 	free(vid);
 }
 
@@ -915,13 +924,13 @@ static xVideoMode vidModeTab[] = {
 
 	{VID_SPCLST, spcv_ini, spc_dot, NULL, NULL, NULL, NULL},
 
-	{CGA_TXT_L, cga_t40_ini, cga_lores_dot, NULL, cga_t40_line, cga_t40_frm, NULL},
-	{CGA_TXT_H, cga_t80_ini, cga_t40_dot, NULL, cga_t40_line, cga_t40_frm, NULL},
-	{CGA_GRF_L, NULL, cga_lores_dot, NULL, cga320_2bpp_line, cga_t40_frm, NULL},
-	{CGA_GRF_H, NULL, cga_t40_dot, NULL, cga640_1bpp_line, cga_t40_frm, NULL},
-	{VGA_GRF_L, vga_glo_ini, cga_t40_dot, NULL, vga320_4bpp_line, cga_t40_frm, NULL},
-	{VGA_GRF_H, vga_ghi_ini, cga_t40_dot, NULL, vga640_4bpp_line, cga_t40_frm, NULL},
-	{VGA_GRF_256, vga_glo_ini, cga_lores_dot, NULL, vga256_line, cga_t40_frm, NULL},
+	{CGA_TXT_L, cga_t40_ini, cga_lores_dot, NULL, cga_t40_line, NULL, cga_t40_frm},
+	{CGA_TXT_H, cga_t80_ini, cga_t40_dot, NULL, cga_t40_line, NULL, cga_t40_frm},
+	{CGA_GRF_L, NULL, cga_lores_dot, NULL, cga320_2bpp_line, NULL, cga_t40_frm},
+	{CGA_GRF_H, NULL, cga_t40_dot, NULL, cga640_1bpp_line, NULL, cga_t40_frm},
+	{VGA_GRF_L, vga_glo_ini, cga_t40_dot, NULL, vga320_4bpp_line, NULL, cga_t40_frm},
+	{VGA_GRF_H, vga_ghi_ini, cga_t40_dot, NULL, vga640_4bpp_line, NULL, cga_t40_frm},
+	{VGA_GRF_256, vga_glo_ini, cga_lores_dot, NULL, vga256_line, NULL, cga_t40_frm},
 
 	{VID_UNKNOWN, NULL, vidDrawBorder, NULL, NULL, NULL, NULL}
 };

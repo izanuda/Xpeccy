@@ -20,7 +20,8 @@ extern "C" {
 #include "i8042_kbd.h"
 #include "i8237_dma.h"
 #include "mos6526_cia.h"
-#include "uart8250.h"
+#include "uart.h"
+#include "upd4990_rtc.h"
 
 #include "sound/ayym.h"
 #include "sound/gs.h"
@@ -32,6 +33,10 @@ extern "C" {
 #ifdef HAVEZLIB
 	#include <zlib.h>
 #endif
+
+extern int compflags;
+
+#define CFLG_PANIC	1
 
 // hw reset rompage
 enum {
@@ -164,6 +169,7 @@ typedef struct {
 	int fCount;		// T in last frame
 	int nsPerTick;
 
+	bool flag[64];
 	unsigned char reg[512];		// internal registers
 	unsigned short wdata;
 	memEntry memMap[16];			// memory map for ATM2, PentEvo
@@ -265,7 +271,8 @@ typedef struct {
 	PS2Ctrl* ps2c;
 	i8237DMA* dma1;		// 8-bit dma
 	i8237DMA* dma2;		// 16-bit dma
-	UART* com1;		// com1 (mouse) controller
+	upd4990* rtc;
+	UART* uart;		// com1 (mouse) controller
 } Computer;
 
 #include "hardware/hardware.h"
@@ -274,6 +281,7 @@ Computer* compCreate();
 void compDestroy(Computer*);
 void compReset(Computer*,int);
 int compExec(Computer*);
+void comp_irq(int, void*);
 
 //void compKeyPress(Computer*, int, keyEntry*);
 //void compKeyRelease(Computer*, int, keyEntry*);

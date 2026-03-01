@@ -105,6 +105,11 @@ int main(int ac,char** av) {
 #endif
 	printf("Using Qt ver %s\n",qVersion());
 
+// for wayland (activateWindow problem)
+	if (!strcmp(getenv("XDG_SESSION_TYPE"), "wayland")) {
+		unsetenv("XDG_SESSION_TYPE");
+		qEnvironmentVariable("QT_QPA_PLATFORM", "wayland");
+	}
 // this works since Qt5.6 (must be set before QCoreApplication is created). Set by default in Qt6
 	#if (QT_VERSION >= QT_VERSION_CHECK(5,6,0)) && (QT_VERSION < QT_VERSION_CHECK(6,0,0))
 		QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
@@ -129,11 +134,6 @@ int main(int ac,char** av) {
 	xWatcher wutw(&mwin);
 	keyWindow keyw(&mwin);
 
-//	int id = QFontDatabase::addApplicationFont(":/DejaVuSansMono.ttf");
-//	if (id > -1) {
-//		dbgw.setFont(QFont(QFontDatabase::applicationFontFamilies(id).first(), 10));
-//	}
-
 	app.d_style();
 
 	mwin.onPrfChange();
@@ -144,8 +144,9 @@ int main(int ac,char** av) {
 	if ((conf.xpos >= 0) && (conf.ypos >= 0))
 		mwin.move(conf.xpos, conf.ypos);
 
-//	app.connect(&ethread, SIGNAL(s_frame()), &mwin, SLOT(d_frame()));	// don't use connection between threads
-	app.connect(&ethread, SIGNAL(s_frame()), &app, SLOT(d_frame()));	// double connection xThread->xApp->MainWin to be thread-safe
+	app.connect(&ethread, SIGNAL(s_close()), &mwin, SLOT(close()));
+
+	app.connect(&ethread, SIGNAL(s_frame()), &app, SLOT(d_frame()));
 	app.connect(&app, SIGNAL(s_frame()), &mwin, SLOT(d_frame()));
 
 	app.connect(&ethread, SIGNAL(dbgRequest()), &mwin, SLOT(doDebug()));	// same shit?
@@ -159,7 +160,6 @@ int main(int ac,char** av) {
 
 	app.connect(&mwin, SIGNAL(s_debug()), &dbgw, SLOT(start()));
 	app.connect(&mwin, SIGNAL(s_debug_off()), &dbgw, SLOT(close()));
-//	app.connect(&mwin, SIGNAL(s_prf_change(xProfile*)), &dbgw, SLOT(onPrfChange(xProfile*)));
 	app.connect(&mwin, SIGNAL(s_step()), &dbgw, SLOT(doStep()));
 	app.connect(&mwin, SIGNAL(s_scradr(int,int)), &dbgw, SLOT(setScrAtr(int,int)));
 
@@ -212,6 +212,8 @@ int main(int ac,char** av) {
 		} else if (!strcmp(parg,"-h") || !strcmp(parg,"--help")) {
 			help();
 			hlp = 1;
+		} else if (!strcmp(parg,"--panic")) {
+			compflags |= CFLG_PANIC;
 #ifdef __WIN32
 		} else if (!strcmp(parg,"-c") || !strcmp(parg,"--console")) {
 			AllocConsole();
@@ -250,11 +252,9 @@ int main(int ac,char** av) {
 				loadDUMP(conf.prof.cur->zx, av[i], adr);
 				i++;
 			} else if (!strcmp(parg,"--bp")) {
-				if (conf.prof.cur->labels.contains(av[i])) {
-					xadr = conf.prof.cur->labels[av[i]];
-					if (xadr.adr >= 0) {
-						brkSet(BRK_CPUADR, MEM_BRK_FETCH, xadr.adr & 0xffff, -1);
-					}
+				xadr = find_label(av[i]);
+				if (xadr.type >= 0) {
+					brkSet(BRK_CPUADR, MEM_BRK_FETCH, xadr.adr & 0xffff, -1);
 				} else {
 					brkSet(BRK_CPUADR, MEM_BRK_FETCH, strtol(av[i],NULL,0) & 0xffff, -1);
 				}

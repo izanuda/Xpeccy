@@ -106,11 +106,13 @@ extern QString getStyleString(QString, QString, int = 0, int = 100);
 void xHexSpin::updatePal() {
 #if 1
 	QString str;
+	QWidget* p = parentWidget();
 	if (changed) {
 		str = getStyleString("dbg.changed.bg", "dbg.changed.txt");
 	} else {
-		str = ""; // getStyleString("dbg.input.bg", "dbg.input.txt");
+		str = p ? p->styleSheet() : ""; // getStyleString("dbg.input.bg", "dbg.input.txt");
 	}
+	if (p) setFont(p->font());
 	setStyleSheet(str);
 #else
 	QPalette pal;
@@ -294,7 +296,10 @@ QString xTreeBox::currentFile() {
 
 // base table model
 
-xTableModel::xTableModel(QObject* p):QAbstractTableModel(p) {}
+xTableModel::xTableModel(QObject* p):QAbstractTableModel(p) {
+	row_count = 0;
+	col_count = 0;
+}
 
 QModelIndex xTableModel::index(int row, int col, const QModelIndex& p) const {
 	return createIndex(row, col);
@@ -318,26 +323,36 @@ void xTableModel::updateCell(int row, int col) {
 
 void xTableModel::setRows(int r) {
 	if (r < row_count) {
-		emit beginRemoveRows(QModelIndex(), r, row_count);
+		emit beginRemoveRows(QModelIndex(), r, row_count-1);
 		row_count = r;
 		emit endRemoveRows();
 	} else if (r > row_count) {
-		emit beginInsertRows(QModelIndex(), row_count, r);
+		emit beginInsertRows(QModelIndex(), row_count, r-1);
 		row_count = r;
 		emit endInsertRows();
 	}
+	update();
 }
 
 void xTableModel::setCols(int c) {
 	if (c < col_count) {
-		emit beginRemoveColumns(QModelIndex(), c, col_count);
+		emit beginRemoveColumns(QModelIndex(), c, col_count-1);
 		col_count = c;
 		emit endRemoveColumns();
 	} else if (c > col_count) {
-		emit beginInsertColumns(QModelIndex(), col_count, c);
+		emit beginInsertColumns(QModelIndex(), col_count, c-1);
 		col_count = c;
 		emit endInsertColumns();
 	}
+	update();
+}
+
+int xTableModel::columnCount(const QModelIndex&) const {
+	return col_count;
+}
+
+int xTableModel::rowCount(const QModelIndex&) const {
+	return row_count;
 }
 
 // item delegate

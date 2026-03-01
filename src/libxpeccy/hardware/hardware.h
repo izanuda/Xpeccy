@@ -32,7 +32,8 @@ enum {
 	HW_BK0010,	// BK0010
 	HW_BK0011M,	// BK0011m
 	HW_SPCLST,	// PC Specialist
-	HW_IBM_PC
+	HW_IBM_PC,	// IBM PC AT/XT
+	HW_PC9801	// NEC PC 9801
 };
 
 // hw group
@@ -46,7 +47,8 @@ enum {
 	HWG_COMMODORE,
 	HWG_BK,
 	HWG_SPCLST,
-	HWG_PC
+	HWG_PC,
+	HWG_PC98XX
 };
 
 enum {
@@ -93,7 +95,7 @@ struct HardWare {
 	int mask;		// mem size bits (see memory.h)
 	double xscale;		// pixel ratio (x:y)
 	vLayout* lay;		// fixed layout ptr. if NULL, use from config
-	int adrbus;		// cpu adr bus width (16/24), pgsize = 2^(n-8)
+	int adrbus;		// cpu adr bus width (16/20/24), pgsize = 2^(n-8)	TODO: must be in CPU core
 	xPortDsc* portab;	// tab of ports descriptors
 	cbhwcomp init;		// init (call on setting comp hardware)
 	cbhwcomp mapMem;	// map memory
@@ -366,6 +368,18 @@ void ibm_iowr(Computer*, int, int);
 void ibm_keyp(Computer*, keyEntry);
 void ibm_keyr(Computer*, keyEntry);
 sndPair ibm_vol(Computer*, sndVolume*);
+
+// pc98xx
+void pc98xx_init(Computer*);
+void pc98xx_reset(Computer*);
+void pc98xx_mem_map(Computer*);
+int pc98xx_mrd(Computer*, int, int);
+void pc98xx_mwr(Computer*, int, int);
+int pc98xx_iord(Computer*, int);
+void pc98xx_iowr(Computer*, int, int);
+void pc98xx_irq(Computer*, int);
+void pc98xx_sync(Computer*, int);
+sndPair pc98xx_vol(Computer*, sndVolume*);
 
 #ifdef __cplusplus
 }

@@ -22,7 +22,7 @@ int blockEnd = -1;
 int tmpcnt = 0;
 
 int getRFIData(QComboBox*);
-void setRFIndex(QComboBox* box, QVariant data);
+void setRFIndex(QComboBox*, QVariant, int);
 int dasmSome(Computer*, int, dasmData&);
 
 // trace type
@@ -169,6 +169,7 @@ void DebugWin::start() {
 	comp->vid->debug = 1;
 	comp->debug = 1;
 	comp->brk = 0;
+	comp->cpu->flgRetBRK = 0;
 
 	brk_clear_tmp(comp);		// clear temp breakpoints
 
@@ -186,6 +187,7 @@ void DebugWin::start() {
 	wid_brk->moved();		// to redraw all icons
 	wid_zxscr->setZoom(conf.dbg.scrzoom);
 	activateWindow();
+	ui_asm.dasmTable->setFocus();
 }
 
 void DebugWin::stop() {
@@ -238,7 +240,7 @@ void DebugWin::onPrfChange() {
 	foreach(xHexSpin* xhs, dbgRegEdit) {
 		xhs->setBase(comp->hw->base);
 	}
-	unsigned int lim = (comp->hw->id == HW_IBM_PC) ? MEM_4M : MEM_64K;
+	unsigned int lim = (1 << comp->hw->adrbus);
 	wid_dump->setLimit(lim);
 	ui_asm.dasmScroll->setMaximum(lim - 1);
 
@@ -353,11 +355,12 @@ DebugWin::DebugWin(QWidget* par):QMainWindow(par) {
 		lab->id = i;
 		lab->setVisible(false);
 		lab->setProperty("isbit", false);
-		xhs = new xHexSpin;
+		xhs = new xHexSpin(this);
 		xhs->setXFlag(XHS_BGR | XHS_DEC | XHS_FILL);
 		xhs->setVisible(false);
 		xhs->setFrame(false);
 		xhs->setFixedWidth(60);
+		xhs->setMinimumHeight(25);
 		xhs->setAlignment(Qt::AlignCenter);
 		qcb = new QCheckBox;
 		qcb->setVisible(false);
@@ -423,6 +426,12 @@ DebugWin::DebugWin(QWidget* par):QMainWindow(par) {
 	ui_asm.tbBreak->addAction(ui_asm.actRead);
 	ui_asm.tbBreak->addAction(ui_asm.actWrite);
 
+	ui_asm.tbLabels->addAction(ui_asm.actShowLabels);
+	ui_asm.tbLabels->addAction(ui_asm.actLoadLabels);
+	ui_asm.tbLabels->addAction(ui_asm.actSaveLabels);
+	ui_asm.tbLabels->addAction(ui_asm.actLabelsList);
+//	ui_asm.tbLabels->addAction(ui_asm.actLabManager);
+
 	ui_asm.tbView->addAction(ui_asm.actViewOpcode);
 	ui_asm.tbView->addAction(ui_asm.actViewByte);
 	ui_asm.tbView->addAction(ui_asm.actViewText);
@@ -432,8 +441,8 @@ DebugWin::DebugWin(QWidget* par):QMainWindow(par) {
 	ui_asm.tbSaveDasm->addAction(ui_asm.actDisasm);
 	ui_asm.tbSaveDasm->addAction(ui_asm.actLoadDump);
 	ui_asm.tbSaveDasm->addAction(ui_asm.actSaveDump);
-	ui_asm.tbSaveDasm->addAction(ui_asm.actLoadLabels);
-	ui_asm.tbSaveDasm->addAction(ui_asm.actSaveLabels);
+//	ui_asm.tbSaveDasm->addAction(ui_asm.actLoadLabels);
+//	ui_asm.tbSaveDasm->addAction(ui_asm.actSaveLabels);
 	ui_asm.tbSaveDasm->addAction(ui_asm.actLoadMap);
 	ui_asm.tbSaveDasm->addAction(ui_asm.actSaveMap);
 
@@ -447,9 +456,9 @@ DebugWin::DebugWin(QWidget* par):QMainWindow(par) {
 	ui_asm.tbTool->addAction(ui_asm.actSprScan);
 	ui_asm.tbTool->addAction(ui_asm.actShowKeys);
 	ui_asm.tbTool->addAction(ui_asm.actWutcha);
-	ui_asm.tbTool->addAction(ui_asm.actLabelsList);
+//	ui_asm.tbTool->addAction(ui_asm.actLabelsList);
 
-	ui_asm.tbDbgOpt->addAction(ui_asm.actShowLabels);
+//	ui_asm.tbDbgOpt->addAction(ui_asm.actShowLabels);
 	ui_asm.tbDbgOpt->addAction(ui_asm.actHideAddr);
 	ui_asm.tbDbgOpt->addAction(ui_asm.actShowSeg);
 	ui_asm.tbDbgOpt->addAction(ui_asm.actRomWr);
@@ -485,6 +494,7 @@ DebugWin::DebugWin(QWidget* par):QMainWindow(par) {
 
 	connect(ui_asm.actLabelsList, &QAction::triggered, labswin, &xLabeList::show);
 	connect(labswin, &xLabeList::labSelected, this, &DebugWin::jumpToLabel);
+	connect(labswin, &xLabeList::labSetChanged, this, &DebugWin::fillDisasm);
 
 	connect(ui_asm.actShowLabels, &QAction::toggled, this, &DebugWin::setShowLabels);
 	connect(ui_asm.actHideAddr, &QAction::toggled, this, &DebugWin::fillDisasm);
@@ -672,6 +682,17 @@ void DebugWin::doTrace(QAction* act) {
 		if (path.isEmpty()) return;
 		logfile.setFileName(path);
 		if (!logfile.open(QFile::WriteOnly)) return;
+		logfile.write("addr|command");
+		xRegBunch regs = cpuGetRegs(conf.prof.cur->zx->cpu);
+		int i = 0;
+		while (regs.regs[i].id != REG_EOT) {
+			if (regs.regs[i].id != REG_EMPTY) {
+				logfile.write("|");
+				logfile.write(regs.regs[i].name);
+			}
+			i++;
+		}
+		logfile.write("\n");
 	}
 
 	trace = 1;
@@ -745,6 +766,11 @@ void DebugWin::keyPressEvent(QKeyEvent* ev) {
 				doStep();
 			}
 			break;
+		case XCUT_STEPOUT:
+			comp->cpu->flgRetBRK = 1;
+			comp->cpu->regCallCnt = 0;
+			stop();
+			break;
 		case XCUT_FASTSTEP:
 			for (i = 10; i > 0; i--)
 				doStep();
@@ -811,18 +837,28 @@ extern int dasmrd(int, void*);
 
 void DebugWin::customEvent(QEvent* ev) {
 	Computer* comp = conf.prof.cur->zx;
+	int pcadr = cpu_get_pc(comp->cpu);
 	switch(ev->type()) {
 		case DBG_EVENT_STEP:
 			if ((traceType == DBG_TRACE_LOG) && logfile.isOpen()) {
-				dasmSome(comp, cpu_get_pc(comp->cpu) + comp->cpu->cs.base, tracemnm);
+				dasmSome(comp, pcadr + comp->cpu->cs.base, tracemnm);
+				tracestr = "\"";			// to avoid numbers conversion, like 3e4->3000
+				if (comp->cpu->core->group == CPUG_X86) {
+					tracestr.append(gethexword(comp->cpu->cs.idx));
+					tracestr.append(":");
+					tracestr.append(gethexword(pcadr));
+				} else {
+					tracestr.append(gethexword(pcadr));
+				}
+				tracestr.append("\"|");
 				doStep();
 				traceregs = cpuGetRegs(comp->cpu);
-				tracestr = tracemnm.command.leftJustified(24,' ');
+				tracestr.append(tracemnm.command);
 				int i = 0;
 				while (traceregs.regs[i].id != REG_EOT) {
-					if (i!=0) tracestr.append(" ");
 					if (traceregs.regs[i].id != REG_EMPTY) {			// mustn't be visible
-						tracestr.append(traceregs.regs[i].name).append(":");
+						tracestr.append("|\"");
+						// tracestr.append(traceregs.regs[i].name).append(":");
 						switch(traceregs.regs[i].type) {
 							case REG_BIT: tracestr.append(traceregs.regs[i].value ? "1" : "0"); break;
 							case REG_BYTE: tracestr.append(gethexbyte(traceregs.regs[i].value)); break;
@@ -830,6 +866,7 @@ void DebugWin::customEvent(QEvent* ev) {
 							case REG_24: tracestr.append(gethex6(traceregs.regs[i].value)); break;
 							case REG_32: tracestr.append(gethexint(traceregs.regs[i].value)); break;
 						}
+						tracestr.append("\"");
 					}
 					i++;
 				}
@@ -929,7 +966,7 @@ int dbg_get_reg_adr(CPU* cpu, xRegister* reg) {
 	int a = reg->value;
 	if (reg->flag & REG_SEG) {
 		a = reg->base;
-	} else if (cpu->type == CPU_I80286) {
+	} else if (cpu->core->group == CPUG_X86) {
 		a += reg->base;
 	}
 	return a;
@@ -1223,8 +1260,13 @@ void DebugWin::dbgLLab() {
 void DebugWin::dbgSLab() {saveLabels(NULL);}
 
 void DebugWin::jumpToLabel(QString lab) {
-	if (conf.prof.cur->labels.contains(lab))
-		ui_asm.dasmTable->setAdr(conf.prof.cur->labels[lab].adr, 1);
+	xAdr xadr = find_label(lab);
+	if (xadr.type >= 0) {
+		int cadr = memFindAdr(conf.prof.cur->zx->mem, xadr.type, xadr.abs);
+		if (cadr >= 0) {
+			ui_asm.dasmTable->setAdr(cadr, 1);
+		}
+	}
 }
 
 // disasm table

@@ -20,6 +20,7 @@
 // interrupt types
 enum {
 	IRQ_BRK = 1,	// common: call deBUGa
+	IRQ_STOP,	// emulator exit
 	IRQ_VID_INT,	// video
 	IRQ_VID_INTV,
 	IRQ_VID_IEND,
@@ -32,6 +33,7 @@ enum {
 	IRQ_CPU_SYNC,	// sync cpu ticks
 	IRQ_CPU_HALT,	// enter halt cycle
 	IRQ_CPU_ACK,	// = sync + set flgACK if interrupt (Z80)
+	IRQ_CPU_UNDEF,	// opcode not recognised
 	IRQ_FDC,	// ibm
 	IRQ_FDC_RD,
 	IRQ_FDC_WR,
@@ -56,7 +58,8 @@ enum {
 	IRQ_VIC,
 	IRQ_TAP_0,	// tape
 	IRQ_TAP_1,
-	IRQ_TAP_BLK
+	IRQ_TAP_BLK,
+	IRQ_RTC_TP,	// upd4990 tp
 };
 
 typedef void(*cbirq)(int, void*);
@@ -115,3 +118,5 @@ extern clock_t tClock;
 #define MEM_1M	(1<<20)
 #define MEM_2M	(1<<21)
 #define MEM_4M	(1<<22)
+#define MEM_8M	(1<<23)
+#define MEM_16M	(1<<24)

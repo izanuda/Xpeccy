@@ -107,8 +107,9 @@ void conf_init(char* wpath, char* confdir) {
 	conf.boot = 1;
 	conf.emu.pause = 0;
 	conf.emu.fast = 0;
-	conf.joy.gpad = new xGamepad; qDebug() << conf.joy.gpad;
-	conf.joy.gpadb = new xGamepad; qDebug() << conf.joy.gpadb;
+	conf.gpctrl = new xGamepadController;
+//	conf.joy.gpad = new xGamepad; qDebug() << conf.joy.gpad;
+//	conf.joy.gpadb = new xGamepad; qDebug() << conf.joy.gpadb;
 	addProfile("default","xpeccy.conf");
 }
 
@@ -164,6 +165,8 @@ void saveConfig() {
 //	fprintf(cfile, "scanlines = %s\n", YESNO(scanlines));
 	fprintf(cfile, "bordersize = %i\n", int(conf.brdsize * 100));
 	fprintf(cfile, "noflick = %i\n", noflic);
+	fprintf(cfile, "noflick.mode = %i\n", noflicMode);
+	fprintf(cfile, "noflick.gamma = %f\n", noflicGamma);
 	fprintf(cfile, "shader = %s\n", conf.vid.shader.c_str());
 
 	fprintf(cfile, "\n[ROMSETS]\n");
@@ -197,10 +200,10 @@ void saveConfig() {
 	fprintf(cfile, "fast = %s\n", YESNO(conf.tape.fast));
 
 	fprintf(cfile, "\n[INPUT]\n\n");
-	fprintf(cfile, "gamepad = %s\n", conf.joy.gpad->name().toLocal8Bit().data());
-	fprintf(cfile, "deadzone = %i\n", conf.joy.gpad->deadZone());
-	fprintf(cfile, "gamepad2 = %s\n", conf.joy.gpadb->name().toLocal8Bit().data());
-	fprintf(cfile, "deadzone2 = %i\n", conf.joy.gpadb->deadZone());
+	fprintf(cfile, "gamepad = %s\n", conf.gpctrl->gpada->lastName().toLocal8Bit().data());
+	fprintf(cfile, "deadzone = %i\n", conf.gpctrl->gpada->deadZone());
+	fprintf(cfile, "gamepad2 = %s\n", conf.gpctrl->gpadb->lastName().toLocal8Bit().data());
+	fprintf(cfile, "deadzone2 = %i\n", conf.gpctrl->gpadb->deadZone());
 
 	fprintf(cfile, "\n[LEDS]\n\n");
 	fprintf(cfile, "mouse = %s\n", YESNO(conf.led.mouse));
@@ -397,10 +400,10 @@ void loadConfig() {
 					}
 					break;
 				case SECT_INPUT:
-					if (pnam=="deadzone") conf.joy.gpad->setDeadZone(arg.i);
-					if (pnam=="deadzone2") conf.joy.gpadb->setDeadZone(arg.i);
-					if (pnam=="gamepad") conf.joy.gpad->open(arg.s); //conf.joy.curName = arg.s;
-					if (pnam=="gamepad2") conf.joy.gpadb->open(arg.s);
+					if (pnam=="deadzone") conf.gpctrl->gpada->setDeadZone(arg.i);
+					if (pnam=="deadzone2") conf.gpctrl->gpadb->setDeadZone(arg.i);
+					if (pnam=="gamepad") conf.gpctrl->gpada->setName(arg.s);
+					if (pnam=="gamepad2") conf.gpctrl->gpadb->setName(arg.s);
 					break;
 				case SECT_VIDEO:
 					if (pnam=="layout") {
@@ -439,6 +442,12 @@ void loadConfig() {
 					}
 					if (pnam=="noflic") noflic = arg.b ? 50 : 25;		// old parameter
 					if (pnam=="noflick") noflic = getRanged(arg.s, 0, 50);	// new parameter
+					if (pnam=="noflick.mode") noflicMode = arg.i;
+					if (pnam=="noflick.gamma") {
+						noflicGamma = arg.d;
+						if (noflicGamma < 1) noflicGamma = 1;
+						if (noflicGamma > 3) noflicGamma = 3;
+					}
 					if (pnam=="greyscale") vid_set_grey(arg.b);
 //					if (pnam=="scanlines") scanlines = arg.b;
 					if (pnam=="shader") conf.vid.shader = pval;
@@ -557,6 +566,8 @@ void loadConfig() {
 			}
 		}
 	}
+	conf.gpctrl->gpada->open();
+	conf.gpctrl->gpadb->open();
 	vid_set_zoom(conf.vid.scale);
 	vid_set_fullscreen(conf.vid.fullScreen);
 	vid_set_ratio(conf.vid.keepRatio);

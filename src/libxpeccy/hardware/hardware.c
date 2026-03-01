@@ -4,6 +4,8 @@
 // layout = v9938:342:313:16:13:57:80:64:0:0:256:192
 // {{full},{border},{blank},{screen},{ipos},ilen}
 
+int hwflags = 0;
+
 //static vLayout gbcLay = {{228,154},{0,0},{68,10},{160,144},{0,0},64};
 static vLayout gbcLay = {{456,154},{0,0},{296,10},{160,144},{0,0},64};		// 456x154 @ 4.2MHz dot
 static vLayout bkLay = {{256+96,256+24},{0,0},{96,24},{256,256},{0,0},0};
@@ -12,6 +14,7 @@ static vLayout nesPALLay = {{342,312},{0,0},{85,72},{256,240},{0,0},64};	// 342x
 static vLayout v9938Lay = {{342,313},{16,13},{57,80},{256,192},{0,0},64};
 static vLayout cmdrLay = {{512,312},{24,30},{144,44},{320,200},{0,0},64};
 static vLayout ibmLay = {{720,492},{0,0},{80,12},{640,480},{0,0},1};
+static vLayout pc98xxLay = {{720,412},{0,0},{80,12},{640,400},{0,0},1};		// check
 
 // pent
 xPortDsc zx_port_tab_a[] = {
@@ -141,6 +144,11 @@ HardWare hwTab[] = {
 		HW_IBM_PC,HWG_PC,"IBM PC","IBM PC",16,MEM_1M | MEM_2M | MEM_4M,1.0,&ibmLay,24,NULL,
 		ibm_init,ibm_mem_map,ibm_iowr,ibm_iord,ibm_mrd,ibm_mwr,ibm_irq,ibm_ack,ibm_reset,ibm_sync,ibm_keyp,ibm_keyr,ibm_vol
 	},{
+#if ISDEBUG
+		HW_PC9801,HWG_PC98XX,"NEC PC 9801","PC9801",16,MEM_1M,1.0,&pc98xxLay,20,NULL,
+		pc98xx_init,pc98xx_mem_map,pc98xx_iowr,pc98xx_iord,pc98xx_mrd,pc98xx_mwr,pc98xx_irq,NULL,pc98xx_reset,pc98xx_sync,NULL,NULL,pc98xx_vol
+#endif
+	},{
 		HW_NULL,HWG_NULL,NULL,NULL,16,0,1.0,NULL,16,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL		// eot
 	}
 };
@@ -201,6 +209,7 @@ void stdMWr(Computer *comp, int adr, int val) {
 int hwIn(xPort* ptab, Computer* comp, int port) {
 	int res = 0xff;
 	int idx = 0;
+	int catch = 0;
 	xPort* itm;
 	do {
 		itm = &ptab[idx];
@@ -210,10 +219,13 @@ int hwIn(xPort* ptab, Computer* comp, int port) {
 				((itm->rom & 2) || (itm->rom == comp->rom)) &&\
 				((itm->cpm & 2) || (itm->cpm == comp->cpm))) {
 			res = itm->in(comp, port);
-			break;
+			catch = !!itm->mask;
 		}
 		idx++;
-	} while (itm->mask != 0);
+	} while (!catch && (itm->mask != 0));
+	if (!catch && (compflags & CFLG_PANIC)) {
+		comp_irq(IRQ_STOP, comp);
+	}
 	return res;
 }
 
@@ -233,6 +245,9 @@ void hwOut(xPort* ptab, Computer* comp, int port, int val, int mult) {
 		}
 		idx++;
 	} while ((itm->mask != 0) && !catch);
+	if (!catch && (compflags & CFLG_PANIC)) {
+		comp_irq(IRQ_STOP, comp);
+	}
 }
 
 // max 32 ports

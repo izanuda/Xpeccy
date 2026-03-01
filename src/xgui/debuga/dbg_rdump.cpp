@@ -10,8 +10,6 @@ xRDumpWidget::xRDumpWidget(QString i, QString t, QWidget* p):xDockWidget(i,t,p) 
 	setObjectName("REG DUMP");
 	connect(this, &QDockWidget::visibilityChanged, this, &xRDumpWidget::draw);
 	hwList << HWG_ZX << HWG_GB << HWG_MSX << HWG_SPCLST;
-
-	ui.tabRegDump->setColumnWidth(0, 70);
 }
 
 void xRDumpWidget::draw() {
@@ -23,6 +21,7 @@ void xRDumpWidget::draw() {
 xRDumpTable::xRDumpTable(QWidget* p):QTableView(p) {
 	model = new xRDumpModel;
 	setModel(model);
+	setColumnWidth(0, 70);
 }
 
 void xRDumpTable::update() {
@@ -30,30 +29,21 @@ void xRDumpTable::update() {
 }
 
 void xRDumpTable::resizeEvent(QResizeEvent* e) {
-// FIXME: columns added by 2
-//	int w = e->size().width();
-//	if (w < 80) return;
-//	int wd = 35; // horizontalHeader()->defaultSectionSize();
-//	int cnt = (w - 70) / wd;
-//	printf("setCols %i\n", cnt+1);
-//	model->setCols(cnt + 1);
-//	setColumnWidth(0, 70);
-//	model->update();
+	int w = width();
+	int w0 = horizontalHeader()->sectionSize(0);
+	if (w >= w0) {
+		int wd = horizontalHeader()->defaultSectionSize();
+		int cnt = (w - w0) / wd;
+		model->setCols(cnt + 1);
+	}
+	QTableView::resizeEvent(e);
 }
 
 // model
 
 xRDumpModel::xRDumpModel(QObject* p):xTableModel(p) {
-	row_count = 0;
-	col_count = 12;
-}
-
-int xRDumpModel::columnCount(const QModelIndex&) const {
-	return col_count;
-}
-
-int xRDumpModel::rowCount(const QModelIndex&) const {
-	return row_count;
+	row_count = 1;
+	col_count = 9;
 }
 
 void xRDumpModel::refill() {
@@ -67,7 +57,6 @@ void xRDumpModel::refill() {
 		i++;
 	}
 	setRows(regs.size());
-	update();
 }
 
 QVariant xRDumpModel::data(const QModelIndex& idx, int role) const {

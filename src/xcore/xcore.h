@@ -129,10 +129,21 @@ typedef struct {
 
 // labels
 
-void add_label(xAdr, QString);
+typedef struct {
+	QString name;
+	QMap<QString, xAdr> list;
+} xLabelSet;
+
+xLabelSet* newLabelSet(QString);
+int delLabelSet(QString);
+xLabelSet* setLabelSet(QString);
+
+void add_label(xAdr, QString, xLabelSet* = nullptr);
 void del_label(QString);
 QString find_label(xAdr);
+xAdr find_label(QString);
 void clear_labels();
+void clear_all_labels();
 
 int loadLabels(const char*);
 int saveLabels(const char*);
@@ -147,6 +158,8 @@ void clear_comments();
 // brk points
 
 #define DELBREAKS 0		// delete breakpoint on FRW=000
+
+#define BRKF_SYSTEM 1
 
 enum {
 	BRK_ACT_DBG = 1,
@@ -170,8 +183,8 @@ typedef struct {
 
 void brkSet(int, int, int, int);
 void brkXor(int, int, int, int, int);
-void brkAdd(xBrkPoint);
-void brkInstall(xBrkPoint*, int);
+void brkAdd(xBrkPoint, int = 0);
+// void brkInstall(xBrkPoint*, int);
 void brkDelete(xBrkPoint);
 void brkInstallAll();
 void brk_clear_tmp(Computer*);
@@ -190,19 +203,17 @@ typedef struct {
 	std::string kmapName;		// keymap
 	std::string lastDir;
 	std::string palette;
-	std::vector<xBrkPoint> brkList;				// TODO: vector->list
-	std::map<int, std::map<int, xBrkPoint*> > brkMap;	// [type][addr] = pointer
+	struct {
+		std::vector<xBrkPoint> list;
+		std::vector<xBrkPoint> list_sys;
+		std::map<int, std::map<int, xBrkPoint*> > map;		// [memtype][addr] = pointer
+	} brk;
 	Computer* zx;
-	struct {
-		QMap<int, QString> ram;
-		QMap<int, QString> rom;
-	} comments;
-	struct {
-		QMap<int, QString> ram;
-		QMap<int, QString> rom;
-		QMap<int, QString> cpu;
-	} labmap;
-	QMap<QString,xAdr> labels;
+	QMap<int, QMap<int, QString> > commap;	// comments: [memtype][addr] = string
+	QMap<int, QMap<int, QString> > labmap;	// [memtype][addr] = name
+	QList<xLabelSet*> labsets;
+	xLabelSet* curlabset;			// curlabset->list = labels
+//	QMap<QString,xAdr> labels;		// name->xAdr
 } xProfile;
 
 #define	DELP_ERR	-1
@@ -218,6 +229,7 @@ void prfLoadAll();
 bool prfSetCurrent(std::string);
 void prfSetRomset(xProfile*, std::string);
 bool prfSetLayout(xProfile*, std::string);
+int prfSetHardware(xProfile*, std::string);
 
 void prfChangeRsName(std::string, std::string);
 void prfChangeLayName(std::string, std::string);
@@ -294,6 +306,7 @@ enum {
 
 	XCUT_STEPIN,
 	XCUT_STEPOVER,
+	XCUT_STEPOUT,
 	XCUT_FASTSTEP,
 	XCUT_TMPBRK,
 	XCUT_TRACE,
@@ -444,10 +457,11 @@ struct xConfig {
 		unsigned autostart:1;
 		unsigned fast:1;
 	} tape;
-	struct {
-		xGamepad* gpad;
-		xGamepad* gpadb;
-	} joy;
+//	struct {
+//		xGamepad* gpad;
+//		xGamepad* gpadb;
+//	} joy;
+	xGamepadController* gpctrl;
 	struct {
 		unsigned noLeds:1;
 		unsigned noBorder:1;

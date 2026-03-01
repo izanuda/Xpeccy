@@ -140,6 +140,14 @@ typedef struct {
 } xSegPtr;				// aka segment table descriptor
 
 enum {
+	CPUG_NONE = 0,
+	CPUG_X80,		// i8080-like (8080, z80, lr35902)
+	CPUG_MOS,		// 6502
+	CPUG_X86,		// x86
+	CPUG_PDP		// vm1,2
+};
+
+enum {
 	CPU_NONE = 0,		// dummy
 	CPU_Z80,		// ZX, MSX, *PC88xx
 	CPU_I8080,
@@ -159,6 +167,9 @@ enum {
 #define flgWAIT	flags[59]		// ALL: WAIT signal (dummy 1T)
 #define flgACK	flags[58]		// Z80: acknowledge INT after execution (prevent last-1T INT)
 #define flgLOCK flags[57]		// LR35902: CPU locked
+#define flgRetBRK flags[56]
+
+#define regCallCnt regs[63].ih
 
 struct CPU {
 	// common part
@@ -226,9 +237,12 @@ struct CPU {
 
 struct cpuCore {
 	int type;				// cpu type
+	int group;				// cpu family
 	int gen;				// cpu generation
 	const char* name;			// printable name
 	xRegDsc* rdsctab;			// registers descriptors table
+	int adrbus;				// width of address bus (bits)
+	int databus;				// width of data bus (bits)
 	void (*init)(CPU*);			// call it when core changed
 	void (*reset)(CPU*);			// reset
 	int (*exec)(CPU*);			// exec opcode, return T

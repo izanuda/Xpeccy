@@ -11,13 +11,6 @@
 // use QKeySequence to bind gamepad to pc keyboard, instead of single key
 #define USE_SEQ_BIND 1
 
-// QGamepad -> Qt5.7+
-#define USE_QT_GAMEPAD 0 && (QT_VERSION >= QT_VERSION_CHECK(5,7,0)) && (QT_VERSION <= QT_VERSION_CHECK(6,0,0))
-
-#if USE_QT_GAMEPAD
-#include <QGamepad>
-#endif
-
 enum {
 	JOY_NONE = 0,
 	JOY_AXIS,
@@ -58,17 +51,22 @@ enum {
 class xGamepad : public QObject {
 	Q_OBJECT
 	public:
-		xGamepad(int = GPBACKEND_SDL, QObject* = nullptr);
+		xGamepad(QObject* = nullptr);
 		~xGamepad();
-		void open(int);
-		void open(QString);
+		void open(int);		// by index/id
+		void open(QString);	// by name
+		void open();		// by last name
 		void close();
-		void setType(int);
-		int getType();
+		int isOpened();
+		int getId();
 		void setDeadZone(int);
 		int deadZone();
-		QString name(int = -1);
+		QString name(int = -1);		// real name by index (name() is empty if gamepad not opened)
+		QString lastName();		// name from config / last successfuly opened gamepad
+		void setName(QString);
 		QStringList getList();
+		static QString getButtonName(int);
+		void update();
 
 		int mapSize();
 		void mapClear();
@@ -85,51 +83,25 @@ class xGamepad : public QObject {
 		void axisChanged(int, double);
 	private:
 		int id;
-		int type;
 		int lasthat;
-		int stid;			// timer id (for sdl events)
 		int dead;
 		double deadf;
+		QString s_name;
 		QList<xJoyMapEntry> map;			// gamepad map for gamepad
 		QMap<int, QMap<int, int> > jState;	// buttons/axis/hats state: -1 -> 1 | 1 -> -1 = release old one
-		union {
-			SDL_Joystick* sjptr;
-#if USE_QT_GAMEPAD
-			QGamepad* qjptr;
-#endif
-		};
-#if USE_QT_GAMEPAD
-	private slots:
-		void BAChanged(bool);
-		void BBChanged(bool);
-		void BXChanged(bool);
-		void BYChanged(bool);
-		void BL1Changed(bool);
-		void BL3Changed(bool);
-		void BR1Changed(bool);
-		void BR3Changed(bool);
-		void BUChanged(bool);
-		void BDChanged(bool);
-		void BRChanged(bool);
-		void BLChanged(bool);
-		void BStChanged(bool);
-		void BSeChanged(bool);
-		void BCeChanged(bool);
-		void BGuChanged(bool);
-		void ALXChanged(double);
-		void ALYChanged(double);
-		void ARXChanged(double);
-		void ARYChanged(double);
-		void AL2Changed(double);
-		void AR2Changed(double);
-		void gpListChanged();
-#endif
+		SDL_Joystick* sjptr;
+};
+
+class xGamepadController : public QObject {
+	Q_OBJECT
+	public:
+		xGamepadController(QObject* = nullptr);
+		xGamepad* gpada;
+		xGamepad* gpadb;
 	protected:
 		void timerEvent(QTimerEvent*);
 };
 
-//void padLoadConfig(xGamepad*, std::string);
-//void padSaveConfig(xGamepad*, std::string);
 // operations with gamepad map files
 int padExists(std::string);
 int padCreate(std::string);

@@ -18,6 +18,7 @@ typedef struct Video Video;
 #include "v9938.h"
 #include "gbcvideo.h"
 #include "nesppu.h"
+#include "upd7220.h"
 
 #define vid_irq(_v, _n) _v->xirq(_n, _v->xptr)
 
@@ -65,10 +66,6 @@ enum {
 // specialist
 	VID_SPCLST,
 // cga/ega/vga
-	VID_CGA_T40,
-	VID_CGA_T80,
-	VID_CGA_G320,
-	VID_CGA_G640,
 	CGA_TXT_L,	// txt 40
 	CGA_TXT_H,	// txt 80
 	CGA_GRF_L,	// grf 320 2bpp (cga)
@@ -83,6 +80,8 @@ extern int bytesPerLine;
 extern int greyScale;
 //extern int scanlines;
 extern int noflic;
+extern int noflicMode;
+extern float noflicGamma;
 
 extern unsigned char* scrimg;
 extern unsigned char* bufimg;
@@ -124,7 +123,7 @@ struct Video {
 	unsigned debug:1;
 	unsigned upd:1;
 	unsigned tail:1;
-	unsigned cutscr:1;
+	unsigned cutscr:1;	// bk only: cut screen
 	unsigned linedbl:1;	// lines doubler
 
 	unsigned hblank:1;	// HBlank signal
@@ -166,11 +165,6 @@ struct Video {
 
 	int vmode;
 	xVideoMode* cb;
-//	cbvid cbDot;		// call every dot
-//	cbvid cbHBlank;		// call every line
-//	cbvid cbVBlank;
-//	cbvid cbLine;		// @ hblank end
-//	cbvid cbFrame;		// call every frame
 	cbvid cbCount;		// call when busy count down to 0
 
 	cbxrd mrd;		// external memory reading
@@ -184,7 +178,6 @@ struct Video {
 	size_t frmsz;
 	size_t vBytes;
 	vRay ray;
-//	vLayout lay;
 	vCoord full;
 	vCoord blank;
 	vCoord bord;
@@ -202,12 +195,12 @@ struct Video {
 
 	unsigned sprblock:1;	// hw block sprites
 	unsigned bgblock:1;	// hw block bg
-	unsigned greyscale:1;
 	vCoord scrsize;		// << tsconf.xSize, tsconf.ySize, v9938::wid
 	vCoord sc;		// screen scroll registers
 	// nes
 	unsigned ntsc:1;	// set if ntsc, prerender line is 1 dot shorter each other frame
 	unsigned ppu_vb:1;	// set at vbs line, reset at vbrline or reading reg2
+	unsigned greyscale:1;	// show in greyscale
 	int vadr;		// nes videomem access addr
 	int fadr;
 	unsigned short tadr;	// nes tmp vadr
@@ -230,11 +223,7 @@ struct Video {
 	unsigned short bgmapadr;
 	unsigned char wline;
 	int xpos;
-//	unsigned char wtline[256];	// win layer with priority
-//	unsigned char wbline[256];	// win layer without priority
-//	unsigned char stline[256];	// spr layer with priority
-//	unsigned char sbline[256];	// spr layer without priority
-	vCoord win;			// win layout position
+	vCoord win;		// win layout position
 	// v9938
 	unsigned high:1;
 	unsigned latch:1;
@@ -258,13 +247,13 @@ struct Video {
 	int finex;
 	int finey;
 //	int lines;
-	int inth;	// interrupts
+	int inth;		// interrupts
 	int intf;
 	int nt;
-	int dpb;	// dots per byte
+	int dpb;		// dots per byte
 	int count;
-	unsigned char com;		// executed command
-	unsigned char arg;		// command argument
+	unsigned char com;	// executed command
+	unsigned char arg;	// command argument
 	unsigned char dat;
 	int BGTiles;
 	int BGMap;
@@ -337,8 +326,8 @@ struct Video {
 	} vga;
 
 	unsigned char line[0x500];		// buffer for render sprites & tiles
-	unsigned char linb[0x200];		// buffer for rendered bitplane
-	unsigned char font[0x2000];		// ATM/C64/CGA text mode font (8K for CGA font)
+	unsigned char linb[0x500];		// buffer for rendered bitplane
+	unsigned char font[0x2000];		// ATM/C64/CGA text mode font (8K for CGA font)		NOTE: pc98xx kanji.rom size is 282KB
 
 	unsigned char sprxspr;			// c64 spr-spr collisions
 	unsigned char sprxbgr;			// c64 spr-bgr collisions
@@ -351,9 +340,11 @@ struct Video {
 	unsigned char ram[MEM_256K];			// video memory
 	unsigned char oam[MEM_256];			// nes/gb oam memory
 	unsigned char reg[256];				// max 256 registers
+//	bool flag[256];
 
 	ulaPlus* ula;
-
+	upd7220* txt7220;
+	upd7220* grf7220;
 };
 
 Video* vidCreate(cbxrd, cbirq, void*);

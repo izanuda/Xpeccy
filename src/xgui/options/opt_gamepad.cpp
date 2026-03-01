@@ -66,7 +66,7 @@ QVariant xPadMapModel::data(const QModelIndex& idx, int role) const {
 							break;
 					}
 					if ((jent.type == JOY_BUTTON) && (jent.num > 11)) {
-						str = QString("Hat ") + hatDirs[jent.num & 3];
+						str = xGamepad::getButtonName(jent.num); // QString("Hat ") + hatDirs[jent.num & 3];
 					}
 					res = str;
 					break;
@@ -128,111 +128,76 @@ void xPadMapModel::update() {
 
 xGamepadWidget::xGamepadWidget(xGamepad* gp, QWidget* p):QWidget(p) {
 	gpad = gp;
-	cbGPName = new QComboBox;
-	cbMapFile = new QComboBox;
-	sldDeadZone = new QSlider(Qt::Horizontal);
-	sldDeadZone->setMinimum(0);
-	sldDeadZone->setMaximum(32768);
-	tvMapView = new QTableView;
+	ui.setupUi(this);
 	padmodel = new xPadMapModel(gp);
-	tvMapView->setModel(padmodel);
-	tvMapView->horizontalHeader()->setVisible(false);
-	tvMapView->verticalHeader()->setVisible(false);
-	tvMapView->verticalHeader()->setDefaultSectionSize(17);
-	tvMapView->horizontalHeader()->setStretchLastSection(true);
-	tvMapView->setGridStyle(Qt::DotLine);
-	tvMapView->setSelectionMode(QAbstractItemView::SingleSelection);
-	tvMapView->setSelectionBehavior(QAbstractItemView::SelectRows);
-	tbAddMap = new QToolButton;
-	tbAddMap->setIcon(QIcon(":/images/add.png"));
-	tbDelMap = new QToolButton;
-	tbDelMap->setIcon(QIcon(":/images/cancel.png"));
-	tbAddEntry = new QToolButton;
-	tbAddEntry->setIcon(QIcon(":/images/add.png"));
-	tbEditEntry = new QToolButton;
-	tbEditEntry->setIcon(QIcon(":/images/edit.png"));
-	tbDelEntry = new QToolButton;
-	tbDelEntry->setIcon(QIcon(":/images/cancel.png"));
+	ui.tvMapView->setModel(padmodel);
+	ui.tvMapView->horizontalHeader()->resizeSection(2, 30);
+	connect(ui.cbGPName, SIGNAL(currentIndexChanged(int)), this, SLOT(devChanged(int)));
+	connect(ui.cbMapFile, SIGNAL(currentIndexChanged(int)), this, SLOT(mapChanged(int)));
+	connect(ui.tbAddMap, SIGNAL(released()), this, SLOT(addMap()));
+	connect(ui.tbDelMap, SIGNAL(released()), this, SLOT(delMap()));
+	connect(ui.tbAddEntry, SIGNAL(released()), this, SLOT(addEntry()));
+	connect(ui.tbEditEntry, SIGNAL(released()), this, SLOT(editEntry()));
+	connect(ui.tbDelEntry, SIGNAL(released()), this, SLOT(delEntry()));
+	connect(ui.tvMapView, SIGNAL(doubleClicked(QModelIndex)), this, SLOT(editEntry()));
+}
 
-	QVBoxLayout* laya = new QVBoxLayout;
-	laya->addWidget(tbAddEntry);
-	laya->addWidget(tbEditEntry);
-	laya->addStretch();
-	laya->addWidget(tbDelEntry);
-	QHBoxLayout* layb = new QHBoxLayout;
-	layb->addLayout(laya);
-	layb->addWidget(tvMapView);
-	QHBoxLayout* layc = new QHBoxLayout;
-	layc->addWidget(cbMapFile);
-	layc->addWidget(tbAddMap);
-	layc->addWidget(tbDelMap);
-	QGridLayout* layd = new QGridLayout;
-	layd->addWidget(new QLabel("Gamepad"), 0, 0);
-	layd->addWidget(cbGPName, 0, 1);
-	layd->addWidget(new QLabel("Dead zone"), 1, 0);
-	layd->addWidget(sldDeadZone, 1, 1);
-	layd->addWidget(new QLabel("Maping"), 2, 0);
-	layd->addLayout(layc, 2, 1);
-	QVBoxLayout* lay = new QVBoxLayout;
-	lay->addLayout(layd);
-	lay->addLayout(layb);
-	setLayout(lay);
-
-	connect(cbGPName, SIGNAL(currentIndexChanged(int)), this, SLOT(devChanged(int)));
-	connect(cbMapFile, SIGNAL(currentIndexChanged(int)), this, SLOT(mapChanged(int)));
-	connect(tbAddMap, SIGNAL(released()), this, SLOT(addMap()));
-	connect(tbDelMap, SIGNAL(released()), this, SLOT(delMap()));
-	connect(tbAddEntry, SIGNAL(released()), this, SLOT(addEntry()));
-	connect(tbEditEntry, SIGNAL(released()), this, SLOT(editEntry()));
-	connect(tbDelEntry, SIGNAL(released()), this, SLOT(delEntry()));
-	connect(tvMapView, SIGNAL(doubleClicked(QModelIndex)), this, SLOT(editEntry()));
+void xGamepadWidget::updateList() {
+	QStringList lst;
+	QString str;
+	int i;
+	lst = gpad->getList();
+	lst.prepend("none");
+	ui.cbGPName->blockSignals(true);			// don't call devChanged automaticly
+	ui.cbGPName->clear();
+	ui.cbGPName->addItems(lst);
+	ui.cbGPName->setEnabled(lst.size() > 1);
+	str = gpad->lastName();
+	if (str.isEmpty()) {
+		ui.cbGPName->setCurrentIndex(0);
+	} else {
+		i = ui.cbGPName->findText(str);
+		if (i < 0) i = 0;			// no such gamepad, reset to 'none'
+		ui.cbGPName->setCurrentIndex(i);
+	}
+	// devChanged(cbGPName->currentIndex());		// update current gamepad
+	ui.cbGPName->blockSignals(false);
 }
 
 void xGamepadWidget::update(std::string mapname) {
 	QStringList lst;
-	QString str;
-	cbGPName->blockSignals(true);
-	cbGPName->clear();
-	lst = gpad->getList();
-	lst.prepend("none");
-	cbGPName->addItems(lst);
-	str = gpad->name();
-	if (str.isEmpty()) {
-		cbGPName->setCurrentIndex(0);
-	} else {
-		cbGPName->setCurrentIndex(cbGPName->findText(str));
-	}
-	cbGPName->blockSignals(false);
-
-	sldDeadZone->setValue(gpad->deadZone());
-
+	int i;
+	updateList();
+	ui.sldDeadZone->setValue(gpad->deadZone());
 	QDir dir(conf.path.confDir.c_str());
-	cbMapFile->clear();
+	ui.cbMapFile->clear();
 	lst = dir.entryList(QStringList() << "*.pad",QDir::Files,QDir::Name);
 	lst.prepend("none");
-	cbMapFile->addItems(lst);
+	ui.cbMapFile->addItems(lst);
 	if (mapname.empty()) {
-		cbMapFile->setCurrentIndex(0);
+		ui.cbMapFile->setCurrentIndex(0);
 	} else {
-		cbMapFile->setCurrentIndex(cbMapFile->findText(mapname.c_str()));
+		i = ui.cbMapFile->findText(mapname.c_str());
+		if (i < 0) i = 0;
+		ui.cbMapFile->setCurrentIndex(i);
 	}
 
 	padmodel->update();
 }
 
 void xGamepadWidget::apply() {
-	gpad->setDeadZone(sldDeadZone->value());
-	if (cbGPName->currentIndex() < 1) {
+	gpad->setDeadZone(ui.sldDeadZone->value());
+	if (ui.cbGPName->currentIndex() < 1) {
 		gpad->close();
 	} else {
-		gpad->open(cbGPName->currentText());
+		gpad->open(ui.cbGPName->currentText());
 	}
 }
 
 std::string xGamepadWidget::getMapName() {
 	std::string str;
-	if (cbMapFile->currentIndex() == 0) return str;
-	str = cbMapFile->currentText().toStdString();
+	if (ui.cbMapFile->currentIndex() == 0) return str;
+	str = ui.cbMapFile->currentText().toStdString();
 	return str;
 }
 
@@ -241,6 +206,7 @@ void xGamepadWidget::devChanged(int idx) {
 		gpad->open(idx-1);
 	} else {
 		gpad->close();
+		gpad->setName("");
 	}
 }
 
@@ -248,7 +214,7 @@ void xGamepadWidget::mapChanged(int idx) {
 	if (idx < 1) {
 		gpad->mapClear();
 	} else {
-		gpad->loadMap(cbMapFile->currentText().toStdString());
+		gpad->loadMap(ui.cbMapFile->currentText().toStdString());
 	}
 	padmodel->update();
 }
@@ -259,25 +225,25 @@ void xGamepadWidget::addMap() {
 	nam.append(".pad");
 	std::string name = nam.toStdString();
 	if (padCreate(name)) {
-		cbMapFile->addItem(nam, nam);
-		cbMapFile->setCurrentIndex(cbMapFile->count() - 1);
+		ui.cbMapFile->addItem(nam, nam);
+		ui.cbMapFile->setCurrentIndex(ui.cbMapFile->count() - 1);
 	} else {
 		showInfo("Map with that name already exists");
 	}
 }
 
 void xGamepadWidget::delMap() {
-	if (cbMapFile->currentIndex() == 0) return;
-	QString name = cbMapFile->currentText();
+	if (ui.cbMapFile->currentIndex() == 0) return;
+	QString name = ui.cbMapFile->currentText();
 	if (name.isEmpty()) return;
 	if (!areSure("Delete this map?")) return;
 	padDelete(name.toStdString());
-	cbMapFile->removeItem(cbMapFile->currentIndex());
-	cbMapFile->setCurrentIndex(0);
+	ui.cbMapFile->removeItem(ui.cbMapFile->currentIndex());
+	ui.cbMapFile->setCurrentIndex(0);
 }
 
 void xGamepadWidget::addEntry() {
-	if (cbMapFile->currentIndex() == 0) return;
+	if (ui.cbMapFile->currentIndex() == 0) return;
 	bindidx = -1;
 	xJoyMapEntry jent;
 	jent.dev = JOY_NONE;
@@ -297,12 +263,12 @@ void xGamepadWidget::entryReady(xJoyMapEntry ent) {
 	if (ent.type == JOY_NONE) return;
 	if (ent.dev == JMAP_NONE) return;
 	gpad->setItem(bindidx, ent);
-	gpad->saveMap(cbMapFile->currentText().toStdString());
+	gpad->saveMap(ui.cbMapFile->currentText().toStdString());
 	padmodel->update();
 }
 
 void xGamepadWidget::editEntry() {
-	bindidx = tvMapView->currentIndex().row();
+	bindidx = ui.tvMapView->currentIndex().row();
 	if (bindidx < 0) return;
 	emit s_edit_entry(gpad, gpad->mapItem(bindidx));
 //	padial->start(conf.joy.gpad->mapItem(bindidx));
@@ -311,7 +277,7 @@ void xGamepadWidget::editEntry() {
 extern bool qmidx_greater(const QModelIndex, const QModelIndex);
 
 void xGamepadWidget::delEntry() {
-	QModelIndexList lst = tvMapView->selectionModel()->selectedRows();
+	QModelIndexList lst = ui.tvMapView->selectionModel()->selectedRows();
 	if (!lst.isEmpty()) {
 		std::sort(lst.begin(), lst.end(), qmidx_greater);
 		if (areSure("Delete this binding(s)?")) {
@@ -321,7 +287,7 @@ void xGamepadWidget::delEntry() {
 				gpad->delItem(row); // map.erase(conf.joy.gpad->map.begin() + row);
 			}
 			padmodel->update();
-			gpad->saveMap(cbMapFile->currentText().toStdString());
+			gpad->saveMap(ui.cbMapFile->currentText().toStdString());
 		}
 	}
 }

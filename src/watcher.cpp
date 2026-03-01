@@ -43,14 +43,19 @@ xResult getOperand(const char* ptr) {
 	char* rbuf = (char*)malloc(strlen(ptr) + 1);
 	char* bptr;
 	char* rptr;
+	const char* tptr;
 	bool err;
 	memset(buf, 0, strlen(ptr) + 1);
 	int val;
 	int base = conf.prof.cur->zx->hw->base;
 	QString str;
+	xAdr xadr;
 
 	// TODO: bc, de recognized as numbers in hex
-	if (isDigit(c, base)) {	// number
+
+	// try to detect number
+	if (isDigit(c, base)) {
+		tptr = res.ptr;
 		if ((c == '0') && (*(res.ptr + 1) == 'x')) {		// 0x... - hex
 			res.ptr += 2;
 			base = 16;
@@ -74,59 +79,80 @@ xResult getOperand(const char* ptr) {
 			res.ptr++;
 			c = *res.ptr;
 		} while (isDigit(c, base));
-	} else if (isLetter(c)) {	// label: collect letters|digits|_|. in buf, search label
-		bptr = buf;
-		rptr = rbuf;
-		do {
-			*bptr = c;
-			if ((c >= 'a') && (c <= 'z')) c = c - 'a' + 'A';
-			*rptr = c;
-			bptr++;
-			rptr++;
-			res.ptr++;
-			c = *res.ptr;
-		} while (isLetter(c) || isDigit(c, base) || (c == '_') || (c == '.') || (c == 0x27));
-		*bptr = 0;
-		*rptr = 0;
-		val = cpu_get_reg(conf.prof.cur->zx->cpu, rbuf, &err);
-		if (err) {
-			str = QString(buf);
-			if (conf.prof.cur->labels.contains(str)) {
-				res.value = conf.prof.cur->labels[str].adr;
-			} else {
-				res.err = 1;
-			}
-		} else {
-			res.value = val;
+		if (c && !strchr("+-*/ )]&|^", c)) {		// allowed symbols after number and /0
+			res.err = 1;
+			res.ptr = tptr;
 		}
 	} else {
-		switch(c) {
-			case '(':		// sub-expression (...)
-				res = xEval(res.ptr + 1, 1);	// stop on )
-				break;
-			case '[':		// [exp] = word(L-H) on address exp
-				res = xEval(res.ptr + 1, 2);	// stop on ]
-				if (!res.err) {
-					val = memRd(conf.prof.cur->zx->mem, res.value);
-					val |= (memRd(conf.prof.cur->zx->mem, res.value + 1) << 8);
-					res.value = val;
-				}
-				break;
-			case '.':		// register: collect letters in buf, ask cpu for value
+		res.err = 1;
+	}
+	// if number detection fails
+	if (res.err) {
+		res.err = 0;
+		c = *ptr;
+		if (isLetter(c)) {	// label: collect letters|digits|_|. in buf, search label
+			bptr = buf;
+			rptr = rbuf;
+			do {
+				*bptr = c;
+				if ((c >= 'a') && (c <= 'z')) c = c - 'a' + 'A';
+				*rptr = c;
+				bptr++;
+				rptr++;
 				res.ptr++;
 				c = *res.ptr;
-				bptr = buf;
-				while (isLetter(c) || (c == 0x27)) {			// 0x27 = '
-					if ((c >= 'a') && (c <= 'z')) c = c - 'a' + 'A';		// to capital
-					*bptr = c;
-					bptr++;
+			} while (isLetter(c) || isDigit(c, base) || (c == '_') || (c == '.') || (c == 0x27));
+			*bptr = 0;
+			*rptr = 0;
+			val = cpu_get_reg(conf.prof.cur->zx->cpu, rbuf, &err);
+			if (err) {
+				str = QString(buf);
+#if 1
+				xadr = find_label(str);
+				if (xadr.type >= 0) {
+					res.value = xadr.adr;
+				} else {
+					res.err = 1;
+				}
+#else
+				if (conf.prof.cur->labels.contains(str)) {
+					res.value = conf.prof.cur->labels[str].adr;
+				} else {
+					res.err = 1;
+				}
+#endif
+			} else {
+				res.value = val;
+			}
+		} else {		// special
+			switch(c) {
+				case '(':		// sub-expression (...)
+					res = xEval(res.ptr + 1, 1);	// stop on )
+					break;
+				case '[':		// [exp] = word(L-H) on address exp
+					res = xEval(res.ptr + 1, 2);	// stop on ]
+					if (!res.err) {
+						val = memRd(conf.prof.cur->zx->mem, res.value);
+						val |= (memRd(conf.prof.cur->zx->mem, res.value + 1) << 8);
+						res.value = val;
+					}
+					break;
+				case '.':		// register: collect letters in buf, ask cpu for value
 					res.ptr++;
 					c = *res.ptr;
-				}
-				*bptr = 0;
-				res.value = cpu_get_reg(conf.prof.cur->zx->cpu, buf, &err);
-				res.err = err;			// 1 if 'no such reg'
-				break;
+					bptr = buf;
+					while (isLetter(c) || (c == 0x27)) {			// 0x27 = '
+						if ((c >= 'a') && (c <= 'z')) c = c - 'a' + 'A';		// to capital
+						*bptr = c;
+						bptr++;
+						res.ptr++;
+						c = *res.ptr;
+					}
+					*bptr = 0;
+					res.value = cpu_get_reg(conf.prof.cur->zx->cpu, buf, &err);
+					res.err = err;			// 1 if 'no such reg'
+					break;
+			}
 		}
 	}
 	free(buf);
@@ -273,11 +299,15 @@ xWatcher::xWatcher(QWidget* p):QDialog(p) {
 	}
 //	ui.regGrid->setRowStretch(32, 10);
 
+	labswin = new xLabeList;
+
 	newWch = new QDialog(this);
 	nui.setupUi(newWch);
 	nui.cbType->addItem("CPU addr", WUT_CPU);
 	nui.cbType->addItem("RAM addr", WUT_RAM);
 	nui.cbType->addItem("ROM addr", WUT_ROM);
+	connect(nui.tbLabel, SIGNAL(released()), labswin, SLOT(show()));
+	connect(labswin, SIGNAL(labSelected(QString)), this, SLOT(insertLabel(QString)));
 
 	for(i = 0; i < 14; i++) ui.wchMemTab->setColumnWidth(i, 30);
 
@@ -379,6 +409,10 @@ void xWatcher::confirmNew() {
 	}
 }
 
+void xWatcher::insertLabel(QString lab) {
+	nui.leExpression->insert(lab);
+}
+
 void xWatcher::delWatcher() {
 	int row = getCurRow();
 	if (row < 0) return;
@@ -426,7 +460,7 @@ void xWatchModel::insertRow(int row, const QModelIndex& idx) {
 }
 
 void xWatchModel::removeRow(int row, const QModelIndex& idx) {
-	emit beginRemoveRows(idx,row,row);
+	emit beginRemoveRows(idx,row*2,row*2+1);
 	emit endRemoveRows();
 }
 
@@ -460,8 +494,7 @@ void xWatchModel::setItem(int idx, int type, QString exp) {
 void xWatchModel::delItem(int idx) {
 	if (idx < explist.size()) {
 		explist.removeAt(idx);
-		removeRow(idx * 2);
-		removeRow(idx * 2 + 1);
+		removeRow(idx);
 	}
 }
 
@@ -501,23 +534,3 @@ QVariant xWatchModel::data(const QModelIndex& idx, int role) const {
 	}
 	return res;
 }
-
-/*
-QString xwhdname[5] = {"Addr","Bytes"};
-
-QVariant xWatchModel::headerData(int col, Qt::Orientation orien, int role) const {
-	QVariant res;
-	switch (role) {
-		case Qt::DisplayRole:
-			switch (orien) {
-				case Qt::Vertical:
-					break;
-				case Qt::Horizontal:
-					if (col < 2) res = xwhdname[col];
-					break;
-			}
-			break;
-	}
-	return res;
-}
-*/

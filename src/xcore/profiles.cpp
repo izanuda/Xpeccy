@@ -61,6 +61,7 @@ xProfile* addProfile(std::string nm, std::string fp) {
 	nprof->file = fp;
 	nprof->layName = std::string("default");
 	nprof->zx = compCreate();
+	nprof->curlabset = nullptr;
 	std::string fname;
 	fname = conf.path.prfDir + SLASH + nprof->name;
 #if defined(__linux) || defined(__APPLE__) || defined(__BSD)
@@ -70,7 +71,7 @@ xProfile* addProfile(std::string nm, std::string fp) {
 #endif
 	prf_load_cmos(nprof, conf.path.prfDir + SLASH + nprof->name + SLASH + nprof->name + ".cmos");
 	prf_load_nvram(nprof, conf.path.prfDir + SLASH + nprof->name + SLASH + nprof->name + ".nvram");
-	compSetHardware(nprof->zx,"Dummy");
+	prfSetHardware(nprof,"Dummy");
 	conf.prof.list.push_back(nprof);
 	return nprof;
 }
@@ -145,10 +146,10 @@ bool prfSetCurrent(std::string nm) {
 	comp_kbd_release(nprf->zx);
 	mouseReleaseAll(nprf->zx->mouse);
 	//padLoadConfig(nprf->jmapName);
-	conf.joy.gpad->loadMap(nprf->jmapNameA);
-	conf.joy.gpadb->loadMap(nprf->jmapNameB);
+	conf.gpctrl->gpada->loadMap(nprf->jmapNameA);
+	conf.gpctrl->gpadb->loadMap(nprf->jmapNameB);
 	loadKeys();
-	compSetHardware(nprf->zx, NULL);
+	prfSetHardware(nprf, "");
 	return true;
 }
 
@@ -186,6 +187,11 @@ void prfChangeLayName(std::string oldName, std::string newName) {
 	}
 }
 
+int prfSetHardware(xProfile* prf, std::string nm) {
+	// todo: if HWG_ZX, set system breakpoints for tape traps
+	return compSetHardware(prf->zx, nm.empty() ? NULL : nm.c_str());
+}
+
 // load-save
 
 #define	PS_NONE		0
@@ -220,7 +226,7 @@ void prfSetRomset(xProfile* prf, std::string rnm) {
 	prf->rsName = rnm;
 	xRomset* rset = findRomset(rnm);
 	std::string fpath;
-	int romsz = prf->zx->mem->romSize;
+	int romsz = MEM_256; // prf->zx->mem->romSize;	// 0?
 	int foff;
 	int fsze;
 	int roff;
@@ -244,7 +250,7 @@ void prfSetRomset(xProfile* prf, std::string rnm) {
 					romsz = toLimits(roff + fsze, MEM_256, MEM_512K);
 					romsz = toPower(romsz);
 				}
-				if (roff + fsze > romsz)
+				if (roff + fsze > romsz)	// check again (if 512K limit)
 					fsze = romsz - roff;
 				if ((foff >= 0) && (roff >= 0) && (roff < MEM_512K) && (fsze > 0)) {	// load rom if all is ok
 					fseek(file, foff, SEEK_SET);
@@ -409,21 +415,13 @@ int prf_load_conf(xProfile* prf, std::string cfname, int flag) {
 				case PS_MACHINE:
 					if (pnam == "current") prf->hwName = pval;
 					if (pnam == "cpu.type") {
-						pspl = splitline(pval, '@');
+						pspl = splitline(pval, '@');		// NAME@LIBRARY = CPU from external lib
 						if (pspl.second.empty()) {		// no @, use built-in
 							cpu_set_type(comp->cpu, pval.c_str(), NULL, NULL);
 						} else {
 							str = conf.path.plgDir + SLASH + "cpu";
 							cpu_set_type(comp->cpu, pspl.first.c_str(), str.c_str(), pspl.second.c_str());
 						}
-						/*
-						if (arg.s[0] == '@') {			// @library.so = from library
-							str = conf.path.plgDir+SLASH+"cpu";
-							cpuSetLib(comp->cpu, str.c_str(), arg.s + 1);
-						} else {
-							cpuSetType(comp->cpu, getCoreID(arg.s));
-						}
-						*/
 					}
 					if (pnam == "cpu.frq") {
 						tmp2 = arg.i;
@@ -503,11 +501,11 @@ int prf_load_conf(xProfile* prf, std::string cfname, int flag) {
 
 	tmp2 = PLOAD_OK;
 
-	if (!compSetHardware(comp, prf->hwName.c_str())) {
+	if (!prfSetHardware(prf, prf->hwName)) {
 		sprintf(buf, "Profile: %s\nHardware was set to 'dummy'", prf->name.c_str());
 		shitHappens(buf);
 		tmp2 = PLOAD_HW;
-		compSetHardware(comp,"Dummy");
+		prfSetHardware(prf, "Dummy");
 	} else if (conf.storePaths) {			// loading files
 		if (comp->tape->path) {
 			load_file(comp, comp->tape->path, FG_TAPE, 0);

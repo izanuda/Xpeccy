@@ -63,8 +63,12 @@
 // NOTE: x86 parity counts on LSB
 
 int i286_check_segment_limit(CPU* cpu, xSegPtr* seg, unsigned short adr) {
-	if (!(cpu->regMSW & I286_FPE)) return 1;
-	if (seg->limit < adr) return 0;
+	if (!(cpu->regMSW & I286_FPE)) return 1;	// real mode
+	if (seg->data && seg->ext) {			// data segment from limit to FFFF
+		if (seg->limit >= adr) return 0;
+	} else {					// segment from 0000 to limit
+		if (seg->limit < adr) return 0;
+	}
 	return 1;
 }
 
@@ -713,6 +717,8 @@ void i286_wr_ea(CPU* cpu, int val, int wrd) {
 }
 
 void i8086_nodef(CPU* cpu) {
+	printf("undef opcode @ %X : %.2X\n", cpu->cs.base + cpu->regIP, cpu->com);
+	cpu_irq(cpu, IRQ_CPU_UNDEF);
 	THROW(I286_INT_UD);
 }
 
@@ -821,6 +827,11 @@ extern opCode i286_0f_tab[256];
 
 void i286_op0F(CPU* cpu) {
 	cpu->opTab = i286_0f_tab;
+}
+
+void i086_op0F(CPU* cpu) {		// pop cs (8086,80186)
+	cpu->tmpw = i286_pop(cpu);
+	cpu->cs = i286_cash_seg(cpu, cpu->tmpw);
 }
 
 // 10,mod: adc eb,rb
@@ -2235,6 +2246,7 @@ void i286_opC5(CPU* cpu) {
 }
 
 // c6,mod,ib: mov ea,ib
+// TODO:c6/0 only
 void i286_opC6(CPU* cpu) {
 	i286_rd_ea(cpu, 0);
 	cpu->lwr = i286_rd_imm(cpu);
@@ -2242,8 +2254,7 @@ void i286_opC6(CPU* cpu) {
 }
 
 // c7,mod,iw: mov ea,iw
-// mod 44
-// [01:byte offset][000:ax][100:si+offset]
+// TODO:c7/0 only
 void i286_opC7(CPU* cpu) {
 	i286_rd_ea(cpu, 1);
 	cpu->twrd = i286_rd_immw(cpu);
@@ -2968,118 +2979,141 @@ opCode i286_tabFF[8] = {
 };
 
 // cpu generation opcodes
-// tab[i] - opCode for generation i (0,1,2)
+// tab[i] - opCode for generation i (0,1,2,[maybe 3])
 
-opCode x86_tab0F[3] = {
-	{0, 1, i8086_nodef, NULL, "nodef"},
-	{0, 1, i8086_nodef, NULL, "nodef"},
+opCode x86_tab0F[4] = {
+	{0, 1, i086_op0F, NULL, "pop cs"},
+	{0, 1, i086_op0F, NULL, "pop cs"},
+	{OF_PREFIX, 1, i286_op0F, NULL, "prefix 0F"},
 	{OF_PREFIX, 1, i286_op0F, NULL, "prefix 0F"}
 };
 
-opCode x86_tab60[3] = {
+// CHECK: i8086 0x60-0x6F == 0x70-0x7F
+
+opCode x86_tab60[4] = {
 	{0, 1, i8086_nodef, NULL, "nodef"},
+	{0, 1, i286_op60, 0, "pusha"},
 	{0, 1, i286_op60, 0, "pusha"},
 	{0, 1, i286_op60, 0, "pusha"}
 };
 
-opCode x86_tab61[3] = {
+opCode x86_tab61[4] = {
 	{0, 1, i8086_nodef, NULL, "nodef"},
+	{0, 1, i286_op61, 0, "popa"},
 	{0, 1, i286_op61, 0, "popa"},
 	{0, 1, i286_op61, 0, "popa"}
 };
 
-opCode x86_tab62[3] = {
+opCode x86_tab62[4] = {
 	{0, 1, i8086_nodef, NULL, "nodef"},
+	{OF_MODRM | OF_WORD, 1, i286_op62, 0, "bound :r,:e"},
 	{OF_MODRM | OF_WORD, 1, i286_op62, 0, "bound :r,:e"},
 	{OF_MODRM | OF_WORD, 1, i286_op62, 0, "bound :r,:e"}
 };
 
-opCode x86_tab63[3] = {
+opCode x86_tab63[4] = {
 	{0, 1, i8086_nodef, NULL, "nodef"},
 	{0, 1, i8086_nodef, NULL, "nodef"},
 	{OF_MODRM | OF_WORD, 1, i286_op63, 0, "arpl :e,:r"},	// 2+
+	{OF_MODRM | OF_WORD, 1, i286_op63, 0, "arpl :e,:r"}
 };
 
-opCode x86_tab68[3] = {
+opCode x86_tab68[4] = {
 	{0, 1, i8086_nodef, NULL, "nodef"},
+	{0, 1, i286_op68, NULL, "push :2"},
 	{0, 1, i286_op68, NULL, "push :2"},
 	{0, 1, i286_op68, NULL, "push :2"}
 };
 
-opCode x86_tab69[3] = {
+opCode x86_tab69[4] = {
 	{0, 1, i8086_nodef, NULL, "nodef"},
+	{OF_MODRM | OF_WORD, 1, i286_op69, NULL, "imul :r,:e,:2"},
 	{OF_MODRM | OF_WORD, 1, i286_op69, NULL, "imul :r,:e,:2"},
 	{OF_MODRM | OF_WORD, 1, i286_op69, NULL, "imul :r,:e,:2"}
 };
 
-opCode x86_tab6A[3] = {
+opCode x86_tab6A[4] = {
 	{0, 1, i8086_nodef, NULL, "nodef"},
+	{0, 1, i286_op6A, 0, "push :1"},
 	{0, 1, i286_op6A, 0, "push :1"},
 	{0, 1, i286_op6A, 0, "push :1"}
 };
 
-opCode x86_tab6B[3] = {
+opCode x86_tab6B[4] = {
 	{0, 1, i8086_nodef, NULL, "nodef"},
+	{OF_MODRM | OF_WORD, 1, i286_op6B, 0, "imul :r,:e,:1"},
 	{OF_MODRM | OF_WORD, 1, i286_op6B, 0, "imul :r,:e,:1"},
 	{OF_MODRM | OF_WORD, 1, i286_op6B, 0, "imul :r,:e,:1"}
 };
 
-opCode x86_tab6C[3] = {
+opCode x86_tab6C[4] = {
 	{0, 1, i8086_nodef, NULL, "nodef"},
+	{OF_SKIPABLE, 1, i286_op6C, 0, ":Linsb [es::di]"},
 	{OF_SKIPABLE, 1, i286_op6C, 0, ":Linsb [es::di]"},
 	{OF_SKIPABLE, 1, i286_op6C, 0, ":Linsb [es::di]"}
 };
 
-opCode x86_tab6D[3] = {
+opCode x86_tab6D[4] = {
 	{0, 1, i8086_nodef, NULL, "nodef"},
+	{OF_SKIPABLE, 1, i286_op6D, 0, ":Linsw [es::di]"},
 	{OF_SKIPABLE, 1, i286_op6D, 0, ":Linsw [es::di]"},
 	{OF_SKIPABLE, 1, i286_op6D, 0, ":Linsw [es::di]"}
 };
 
-opCode x86_tab6E[3] = {
+opCode x86_tab6E[4] = {
 	{0, 1, i8086_nodef, NULL, "nodef"},
+	{OF_SKIPABLE, 1, i286_op6E, 0, ":Loutsb [:D::si]"},
 	{OF_SKIPABLE, 1, i286_op6E, 0, ":Loutsb [:D::si]"},
 	{OF_SKIPABLE, 1, i286_op6E, 0, ":Loutsb [:D::si]"}
 };
 
-opCode x86_tab6F[3] = {
+opCode x86_tab6F[4] = {
 	{0, 1, i8086_nodef, NULL, "nodef"},
+	{OF_SKIPABLE, 1, i286_op6F, 0, ":Loutsw [:D::si]"},
 	{OF_SKIPABLE, 1, i286_op6F, 0, ":Loutsw [:D::si]"},
 	{OF_SKIPABLE, 1, i286_op6F, 0, ":Loutsw [:D::si]"}
 };
 
-opCode x86_tabC0[3] = {
+// CHECK: i8086 Cx is not fully decoded (C0 = C2 etc)
+
+opCode x86_tabC0[4] = {
 	{0, 1, i8086_nodef, NULL, "nodef"},
+	{OF_MODCOM, 1, i286_opC0, i286_tabC0, ":R :e,:1"},
 	{OF_MODCOM, 1, i286_opC0, i286_tabC0, ":R :e,:1"},
 	{OF_MODCOM, 1, i286_opC0, i286_tabC0, ":R :e,:1"}
 };
 
-opCode x86_tabC1[3] = {
+opCode x86_tabC1[4] = {
 	{0, 1, i8086_nodef, NULL, "nodef"},
+	{OF_MODCOM | OF_WORD, 1, i286_opC1, i286_tabC1, ":R :e,:1"},
 	{OF_MODCOM | OF_WORD, 1, i286_opC1, i286_tabC1, ":R :e,:1"},
 	{OF_MODCOM | OF_WORD, 1, i286_opC1, i286_tabC1, ":R :e,:1"}
 };
 
-opCode x86_tabC6[3] = {
+opCode x86_tabC6[4] = {
 	{0, 1, i8086_nodef, NULL, "nodef"},
+	{OF_MODRM, 1, i286_opC6, 0, "mov :e,:1"},
 	{OF_MODRM, 1, i286_opC6, 0, "mov :e,:1"},
 	{OF_MODRM, 1, i286_opC6, 0, "mov :e,:1"}
 };
 
-opCode x86_tabC7[3] = {
+opCode x86_tabC7[4] = {
 	{0, 1, i8086_nodef, NULL, "nodef"},
+	{OF_MODRM | OF_WORD, 1, i286_opC7, 0, "mov :e,:2"},
 	{OF_MODRM | OF_WORD, 1, i286_opC7, 0, "mov :e,:2"},
 	{OF_MODRM | OF_WORD, 1, i286_opC7, 0, "mov :e,:2"}
 };
 
-opCode x86_tabC8[3] = {
+opCode x86_tabC8[4] = {
 	{0, 1, i8086_nodef, NULL, "nodef"},
+	{0, 1, i286_opC8, 0, "enter :2,:1"},
 	{0, 1, i286_opC8, 0, "enter :2,:1"},
 	{0, 1, i286_opC8, 0, "enter :2,:1"}
 };
 
-opCode x86_tabC9[3] = {
+opCode x86_tabC9[4] = {
 	{0, 1, i8086_nodef, NULL, "nodef"},
+	{0, 1, i286_opC9, 0, "leave"},
 	{0, 1, i286_opC9, 0, "leave"},
 	{0, 1, i286_opC9, 0, "leave"}
 };
@@ -3285,8 +3319,8 @@ opCode i80286_tab[256] = {
 	{0, 1, i286_opC3, 0, "ret"},
 	{OF_MODRM | OF_WORD, 1, i286_opC4, 0, "les :r,:e"},
 	{OF_MODRM | OF_WORD, 1, i286_opC5, 0, "lds :r,:e"},
-	{OF_MODRM | OF_GEN, 1, i286_opC6, x86_tabC6, "mov :e,:1"},			// 1+ /0 mov, /1../7 undef !!!
-	{OF_MODRM | OF_WORD |  OF_GEN, 1, i286_opC7, x86_tabC7, "mov :e,:2"},		// 1+ /0 mov, /1../7 undef
+	{OF_MODRM, 1, i286_opC6, 0, "mov :e,:1"},			// /0 mov, /1../7 undef !!!
+	{OF_MODRM | OF_WORD, 1, i286_opC7, 0, "mov :e,:2"},		// /0 mov, /1../7 undef
 	{OF_GEN, 1, i286_opC8, x86_tabC8, "enter :2,:1"},				// 1+
 	{OF_GEN, 1, i286_opC9, x86_tabC9, "leave"},					// 1+
 	{0, 1, i286_opCA, 0, "retf :2"},

@@ -130,7 +130,7 @@ int dasmrd(int adr, void* ptr) {
 	unsigned char res = 0xff;
 	int fadr;
 	MemPage* pg;
-	if (comp->cpu->type == CPU_I80286) {
+	if (comp->cpu->core->group == CPUG_X86) {
 		res = comp->hw->mrd(comp, adr, 0) & 0xff;
 	} else {
 		switch (mode) {
@@ -157,36 +157,31 @@ int dasmrd(int adr, void* ptr) {
 
 void dasmwr(Computer* comp, int adr, int bt) {
 	adr &= comp->mem->busmask;
-//	if (comp->cpu->type == CPU_I80286) return;
 	int fadr;
 	MemPage* pg;
-//	if (comp->cpu->type == CPU_I80286) {
-//		comp->hw->mwr(comp, adr, bt);
-//	} else {
-		switch(mode) {
-			case XVIEW_CPU:
-				pg = mem_get_page(comp->mem, adr);		// = &comp->mem->map[(adr >> 8) & 0xff];
-				fadr = mem_get_phys_adr(comp->mem, adr);	// pg->num << 8) | (adr & 0xff);
-				switch (pg->type) {
-					// no writings to slot
-					case MEM_ROM:
-						if (conf.dbg.romwr)
-							comp->mem->romData[fadr & comp->mem->romMask] = bt & 0xff;
-						break;
-					case MEM_RAM:
-						comp->mem->ramData[fadr & comp->mem->ramMask] = bt & 0xff;
-						break;
-				}
-				break;
-			case XVIEW_RAM:
-				comp->mem->ramData[((adr & 0x3fff) | (page << 14)) & comp->mem->ramMask] = bt & 0xff;
-				break;
-			case XVIEW_ROM:
-				if (conf.dbg.romwr)
-					comp->mem->romData[((adr & 0x3fff) | (page << 14)) & comp->mem->romMask] = bt & 0xff;
-				break;
-		}
-//	}
+	switch(mode) {
+		case XVIEW_CPU:
+			pg = mem_get_page(comp->mem, adr);		// = &comp->mem->map[(adr >> 8) & 0xff];
+			fadr = mem_get_phys_adr(comp->mem, adr);	// pg->num << 8) | (adr & 0xff);
+			switch (pg->type) {
+				// no writings to slot
+				case MEM_ROM:
+					if (conf.dbg.romwr)
+						comp->mem->romData[fadr & comp->mem->romMask] = bt & 0xff;
+					break;
+				case MEM_RAM:
+					comp->mem->ramData[fadr & comp->mem->ramMask] = bt & 0xff;
+					break;
+			}
+			break;
+		case XVIEW_RAM:
+			comp->mem->ramData[((adr & 0x3fff) | (page << 14)) & comp->mem->ramMask] = bt & 0xff;
+			break;
+		case XVIEW_ROM:
+			if (conf.dbg.romwr)
+				comp->mem->romData[((adr & 0x3fff) | (page << 14)) & comp->mem->romMask] = bt & 0xff;
+			break;
+	}
 }
 
 void placeLabel(Computer* comp, dasmData& drow) {
@@ -269,7 +264,7 @@ int dasmAddr(Computer* comp, int adr, dasmData& drow) {
 	word |= (dasmrd(adr + 1, comp) << 8);
 /*
 	xAdr xadr;
-	if (comp->cpu->type == CPU_I80286) {
+	if (comp->cpu->core->group == CPUG_X86) {
 		xadr = mem_get_xadr(comp->mem, word + comp->cpu->cs.base);
 	} else {
 		xadr = mem_get_xadr(comp->mem, word);
@@ -423,7 +418,7 @@ QList<dasmData> getDisasm(Computer* comp, int& adr) {
 		list.append(drow);
 	}
 	drow.islab = 0;			// next line is addr
-	if (comp->cpu->type == CPU_I80286) {
+	if (comp->cpu->core->group == CPUG_X86) {
 		offset = adr - comp->cpu->cs.base;
 		if ((offset < 0) || (offset > comp->cpu->cs.limit)) {
 			drow.aname = QString::number(adr, comp->hw->base).toUpper().rightJustified(6, '0');
@@ -585,11 +580,14 @@ int str_to_adr(Computer* comp, QString str) {
 		adr = str.toInt(&flag, 16);
 	} else if (str.startsWith("0x")) {			// 0xnnnn : hex adr
 		adr = str.toInt(&flag, 16);
-	} else if (conf.prof.cur->labels.contains(str)) {	// NAME : label name
-		adr = conf.prof.cur->labels[str].adr;
-		flag = true;
-	} else {						// other : adr in base of comp hardware (16 | 8)
-		adr = str.toInt(&flag, comp->hw->base);
+	} else {
+		xAdr xadr = find_label(str);			// NAME : label name
+		if (xadr.type >= 0) {
+			adr = xadr.adr;
+			flag = true;
+		} else {						// other : adr in base of comp hardware (16 | 8)
+			adr = str.toInt(&flag, comp->hw->base);
+		}
 	}
 	if (!flag) adr = -1;
 	return adr;
@@ -719,8 +717,9 @@ bool xDisasmModel::setData(const QModelIndex& cidx, const QVariant& val, int rol
 				}
 			} else if (str.startsWith("dw ", Qt::CaseInsensitive)) {	// word/addr
 				str = str.mid(3);
-				if (conf.prof.cur->labels.contains(str)) {				// check label
-					idx = conf.prof.cur->labels[str].adr;
+				xadr = find_label(str);
+				if (xadr.type >= 0) {				// check label
+					idx = xadr.adr;
 					*ptr &= 0x0f;
 					*ptr |= DBG_VIEW_ADDR;
 					ptr++;
@@ -769,7 +768,9 @@ bool xDisasmModel::setData(const QModelIndex& cidx, const QVariant& val, int rol
 // TABLE
 
 xDisasmTable::xDisasmTable(QWidget* p):QTableView(p) {
-	//cptr = NULL;
+	for (int i = 0; i < 5; i++) {
+		storedAddress[i] = -1;
+	}
 	model = new xDisasmModel();
 	setModel(model);
 	connect(model, SIGNAL(s_comenter()), this, SLOT(rowDown()));
@@ -931,6 +932,16 @@ void xDisasmTable::copyToCbrd() {
 	}
 }
 
+void xDisasmTable::jumpMarked(int idx, Qt::KeyboardModifiers mod) {
+	if ((idx < 0) || (idx > 4)) return;
+	if (mod & Qt::AltModifier) {
+		int adr = storedAddress[idx];
+		if (adr >= 0) setAdr(adr);
+	} else if (mod & Qt::ControlModifier) {
+		storedAddress[idx] = getAdr();
+	}
+}
+
 void xDisasmTable::keyPressEvent(QKeyEvent* ev) {
 	QModelIndex idx = currentIndex();
 	int i;
@@ -938,7 +949,8 @@ void xDisasmTable::keyPressEvent(QKeyEvent* ev) {
 	int bpr;
 	int adr;
 	xAdr xadr;
-	int key = shortcut_check(SCG_DISASM, QKeySequence(ev->key() | ev->modifiers()));
+	Qt::KeyboardModifiers mod = ev->modifiers();
+	int key = shortcut_check(SCG_DISASM, QKeySequence(ev->key() | mod));
 	if (key < 0)
 		key = shortcut_check(SCG_DISASM, QKeySequence(ev->key()));
 	if (key < 0)
@@ -946,16 +958,21 @@ void xDisasmTable::keyPressEvent(QKeyEvent* ev) {
 	Computer* comp = conf.prof.cur->zx;
 	int pc = cpu_get_pc(comp->cpu);
 	switch (key) {
+		case Qt::Key_1: jumpMarked(0, mod); break;
+		case Qt::Key_2: jumpMarked(1, mod); break;
+		case Qt::Key_3: jumpMarked(2, mod); break;
+		case Qt::Key_4: jumpMarked(3, mod); break;
+		case Qt::Key_5: jumpMarked(4, mod); break;
 		case Qt::Key_Up:
-			if ((ev->modifiers() & Qt::ControlModifier) || (idx.row() == 0)) {
-				scrolUp(ev->modifiers());
+			if ((mod & Qt::ControlModifier) || (idx.row() == 0)) {
+				scrolUp(mod);
 			} else {
 				QTableView::keyPressEvent(ev);
 			}
 			break;
 		case Qt::Key_Down:
-			if ((ev->modifiers() & Qt::ControlModifier) || (idx.row() == model->rowCount() - 1)) {
-				scrolDn(ev->modifiers());
+			if ((mod & Qt::ControlModifier) || (idx.row() == model->rowCount() - 1)) {
+				scrolDn(mod);
 			} else {
 				QTableView::keyPressEvent(ev);
 			}
@@ -993,7 +1010,7 @@ void xDisasmTable::keyPressEvent(QKeyEvent* ev) {
 			break;
 		case XCUT_SETBRK:
 			adr = getData(idx.row(), 0, Qt::UserRole).toInt();	// bus addr
-			if (ev->modifiers() & Qt::ShiftModifier) {
+			if (mod & Qt::ShiftModifier) {
 				bpr = BRK_CPUADR;
 				bpt = 0;
 			} else {
@@ -1013,9 +1030,9 @@ void xDisasmTable::keyPressEvent(QKeyEvent* ev) {
 				// adr = xadr.abs;
 			}
 			// modifiers doesn't work with new hotkeys (hotkey not detected)
-			if (ev->modifiers() & Qt::AltModifier) {
+			if (mod & Qt::AltModifier) {
 				bpt |= MEM_BRK_RD;
-			} else if (ev->modifiers() & Qt::ControlModifier) {
+			} else if (mod & Qt::ControlModifier) {
 				bpt |= MEM_BRK_WR;
 			} else {
 				bpt |= MEM_BRK_FETCH;
@@ -1045,7 +1062,7 @@ void xDisasmTable::keyPressEvent(QKeyEvent* ev) {
 			edit(currentIndex());
 			break;
 		case Qt::Key_C:
-			if (ev->modifiers() & Qt::ControlModifier)
+			if (mod & Qt::ControlModifier)
 				copyToCbrd();
 			break;
 		default:

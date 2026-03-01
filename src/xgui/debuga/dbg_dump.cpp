@@ -9,7 +9,7 @@
 extern int blockStart;
 extern int blockEnd;
 
-#define SECTSIZE 25
+// #define SECTSIZE 25
 
 // MODEL
 
@@ -41,7 +41,7 @@ int xDumpModel::mrd(int adr) const {
 	MemPage* pg;
 	int fadr;
 	int res = 0xff;
-	if (comp->cpu->type == CPU_I80286) {
+	if (comp->cpu->core->group == CPUG_X86) {
 		res = comp->hw->mrd(comp, adr, 0);
 	} else {
 		switch(mode) {
@@ -77,7 +77,7 @@ void xDumpModel::mwr(int adr, unsigned char bt) {
 	Computer* comp = conf.prof.cur->zx;
 	MemPage* pg;
 	int fadr;
-	if (comp->cpu->type == CPU_I80286) {
+	if (comp->cpu->core->group == CPUG_X86) {
 		comp->hw->mwr(comp, adr, bt);
 	} else {
 		switch(mode) {
@@ -237,7 +237,7 @@ QVariant xDumpModel::data(const QModelIndex& idx, int role) const {
 			break;
 		case Qt::DisplayRole:
 			if (col == 0) {
-				if (conf.prof.cur->zx->cpu->type == CPU_I80286) {
+				if (conf.prof.cur->zx->cpu->core->group == CPUG_X86) {
 					adr %= maxadr;
 					if (!conf.dbg.segment) {
 						res = QString::number(adr, 16).toUpper().rightJustified(6 , '0');
@@ -438,6 +438,7 @@ void xDumpTable::resizeEvent(QResizeEvent* ev) {
 
 	QFontMetrics fm(font());
 	int w = ev->size().width();
+	int wd = horizontalHeader()->minimumSectionSize();
 	int w0;
 	int wl;
 	int i;
@@ -449,9 +450,9 @@ void xDumpTable::resizeEvent(QResizeEvent* ev) {
 	w0 = fm.width("0000:0000");
 	wl = fm.width("00000000");
 #endif
-	int sz = (w - w0 - wl - 30) / 8;
-	if (sz <= SECTSIZE*2) {		// 8
-		sz = (w - w0 - wl - 30) / 8;
+	int sz = (w - w0 - wl * 2 - 10) / 16;	// check size if 16 bytes/row
+	if (sz <= wd) {		// 8		// not enough, 8 bytes
+		sz = (w - w0 - wl - 10) / 8;
 		model->dmpsize = 8;
 		for (i = 9; i < 17; i++) {
 			hideColumn(i);
@@ -459,7 +460,7 @@ void xDumpTable::resizeEvent(QResizeEvent* ev) {
 		horizontalHeader()->setDefaultSectionSize(sz);
 		setColumnWidth(17, wl);
 	} else {			// 16
-		sz = (w - w0 - wl*2 - 30) / 16;
+		//sz = (w - w0 - wl*2 - 10) / 16;
 		model->dmpsize = 16;
 		for (i = 9; i < 17; i++) {
 			showColumn(i);
@@ -467,7 +468,7 @@ void xDumpTable::resizeEvent(QResizeEvent* ev) {
 		horizontalHeader()->setDefaultSectionSize(sz);
 		setColumnWidth(17, wl*2);
 	}
-	setColumnWidth(0, w0+5);
+	setColumnWidth(0, w0 + 5);
 	update();
 }
 
@@ -479,7 +480,7 @@ void xDumpTable::keyPressEvent(QKeyEvent* ev) {
 				QTableView::keyPressEvent(ev);
 				emit s_adrch(model->dmpadr);
 			} else {
-				setAdr(model->dmpadr - 8);
+				setAdr(model->dmpadr - model->dmpsize);
 			}
 			break;
 		case Qt::Key_Down:
@@ -487,7 +488,7 @@ void xDumpTable::keyPressEvent(QKeyEvent* ev) {
 				QTableView::keyPressEvent(ev);
 				emit s_adrch(model->dmpadr);
 			} else {
-				setAdr(model->dmpadr + 8);
+				setAdr(model->dmpadr + model->dmpsize);
 			}
 			break;
 		case Qt::Key_Left:
@@ -496,10 +497,10 @@ void xDumpTable::keyPressEvent(QKeyEvent* ev) {
 			// emit s_adrch(model->dmpadr);
 			break;
 		case Qt::Key_PageUp:
-			setAdr(model->dmpadr - (rows() * 8));
+			setAdr(model->dmpadr - (rows() * model->dmpsize));
 			break;
 		case Qt::Key_PageDown:
-			setAdr(model->dmpadr + (rows() * 8));
+			setAdr(model->dmpadr + (rows() * model->dmpsize));
 			break;
 		case Qt::Key_Return:
 			if (state() == QAbstractItemView::EditingState) break;
@@ -576,8 +577,8 @@ void xDumpTable::mouseMoveEvent(QMouseEvent* ev) {
 	}
 	adr %= model->maxadr;
 	if ((ev->modifiers() == Qt::NoModifier) && (ev->buttons() & Qt::LeftButton) && (adr != blockStart) && (adr != blockEnd) && (adr != markAdr)) {
-		if ((col == 0) || (col > 8))
-			adr += 7;
+		if ((col == 0) || (col > 17))
+			adr += model->dmpsize;
 		if (adr < blockStart) {
 			blockStart = adr;
 			blockEnd = markAdr;
@@ -593,9 +594,9 @@ void xDumpTable::mouseMoveEvent(QMouseEvent* ev) {
 
 void xDumpTable::wheelEvent(QWheelEvent* ev) {
 	if (ev->yDelta < 0) {
-		setAdr(model->dmpadr + 8);
+		setAdr(model->dmpadr + model->dmpsize);
 	} else if (ev->yDelta > 0) {
-		setAdr(model->dmpadr - 8);
+		setAdr(model->dmpadr - model->dmpsize);
 	}
 }
 
@@ -715,8 +716,8 @@ void xDumpWidget::customMenuAction(QAction* act) {
 				case MEM_EXT: emit s_brkrq(BRK_MEMEXT, bt, xadr.abs); break;
 			}
 			break;
-		case XVIEW_ROM: emit s_brkrq(BRK_MEMROM, bt, adr); break;
-		case XVIEW_RAM: emit s_brkrq(BRK_MEMRAM, bt, adr); break;
+		case XVIEW_ROM: emit s_brkrq(BRK_MEMROM, bt, (adr & 0x3fff) | (ui.sbDumpPage->value() << 14)); break;
+		case XVIEW_RAM: emit s_brkrq(BRK_MEMRAM, bt, (adr & 0x3fff) | (ui.sbDumpPage->value() << 14)); break;
 	}
 }
 
@@ -779,7 +780,7 @@ void xDumpWidget::refill() {
 	int psize;
 	Computer* comp = conf.prof.cur->zx;
 	if (mode == XVIEW_CPU) {
-		psize = (comp->hw->id == HW_IBM_PC) ? MEM_4M : MEM_64K;
+		psize = (1 << comp->hw->adrbus); // (comp->hw->id == HW_IBM_PC) ? MEM_4M : MEM_64K;
 	} else {
 		psize = getRFIData(ui.cbDumpPageSize);
 	}

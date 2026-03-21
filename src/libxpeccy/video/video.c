@@ -341,6 +341,45 @@ void vid_set_border(Video* vid, double brd) {
 	vid_upd_layout(vid);
 }
 
+// font
+
+void vid_fnt_load(Video* vid, const char* path) {
+	FILE* file = fopen(path, "rb");
+	if (file) {
+		fseek(file, 0, SEEK_END);
+		vid->font.size = ftell(file);
+		fseek(file, 0, SEEK_SET);
+		vid->font.data = realloc(vid->font.data, vid->font.size);
+		fread(vid->font.data, vid->font.size, 1, file);
+		fclose(file);
+	}
+}
+
+void vid_fnt_del(Video* vid) {
+	if (!vid->font.data) return;
+	free(vid->font.data);
+	vid->font.data = NULL;
+	vid->font.size = 0;
+}
+
+int vid_fnt_rd(Video* vid, int adr) {
+	int res = -1;
+	if (vid->font.data) {
+		if (adr < vid->font.size) {
+			res = vid->font.data[adr];
+		}
+	}
+	return res;
+}
+
+void vid_fnt_wr(Video* vid, int adr, int val) {
+	if (vid->font.data) {
+		if (adr < vid->font.size) {
+			vid->font.data[adr] = val & 0xff;
+		}
+	}
+}
+
 static int xscr = 0;
 static int yscr = 0;
 static int adr = 0;
@@ -486,13 +525,16 @@ void vid_set_grey(int f) {
 
 // palette
 
-xColor vid_get_col(Video* vid, int i) {
+xColor uint_to_xcol(uint32_t c) {
 	xColor xcol;
-	i = vid->pal[i & 0xff];
-	xcol.r = i & 0xff;
-	xcol.g = (i >> 8) & 0xff;
-	xcol.b = (i >> 16) & 0xff;
+	xcol.r = c & 0xff;
+	xcol.g = (c >> 8) & 0xff;
+	xcol.b = (c >> 16) & 0xff;
 	return xcol;
+}
+
+xColor vid_get_col(Video* vid, int i) {
+	return uint_to_xcol(vid->pal[i & 0xff]);
 }
 
 void vid_set_col(Video* vid, int i, xColor xcol) {
@@ -501,14 +543,34 @@ void vid_set_col(Video* vid, int i, xColor xcol) {
 	vid->gpal[i & 0xff] = outcol | (outcol << 8) | (outcol << 16) | (0xff << 24);
 }
 
+void vid_set_red(Video* vid, int i, int v) {
+	xColor col = vid_get_col(vid, i);
+	col.r = v & 0xff;
+	vid_set_col(vid, i, col);
+}
+
+void vid_set_green(Video* vid, int i, int v) {
+	xColor col = vid_get_col(vid, i);
+	col.g = v & 0xff;
+	vid_set_col(vid, i, col);
+}
+
+void vid_set_blue(Video* vid, int i, int v) {
+	xColor col = vid_get_col(vid, i);
+	col.b = v & 0xff;
+	vid_set_col(vid, i, col);
+}
+
 // set base color palette (used for preset loading)
 void vid_set_bcol(Video* vid, int i, xColor xcol) {
 	vid->bpal[i & 0xff] = xcol.r | (xcol.g << 8) | (xcol.b << 16) | (0xff << 24);
 }
 
 // set current palette color from preloaded preset
+// NOTE: set gpal too
 void vid_reset_col(Video* vid, int i) {
-	vid->pal[i & 0xff] = vid->bpal[i & 0xff];
+	xColor col = uint_to_xcol(vid->bpal[i & 0xff]);
+	vid_set_col(vid, i, col);
 }
 
 // video drawing
@@ -743,7 +805,7 @@ void vidDrawATMtext(Video* vid) {
 				scrbyte = vid->mrd(MADR(vid->curscr, adr ^ 0x2000), vid->xptr) & 0xff;
 				col = vid->mrd(MADR(vid->curscr ^ 4, adr + 1), vid->xptr) & 0xff;
 			}
-			scrbyte = vid->font[(scrbyte << 3) | (yscr & 7)];
+			scrbyte = vid_fnt_rd(vid, (scrbyte << 3) | (yscr & 7));	// vid->font[(scrbyte << 3) | (yscr & 7)];
 			vidATMDoubleDot(vid,col);
 		}
 	}
@@ -791,7 +853,7 @@ void vidDrawEvoText(Video* vid) {
 				scrbyte = vid->mrd(MADR(vid->curscr + 3, adr + 0x1000), vid->xptr);
 				col = vid->mrd(MADR(vid->curscr + 3, adr + 0x2001), vid->xptr);
 			}
-			scrbyte = vid->font[(scrbyte << 3) | (yscr & 7)];
+			scrbyte = vid_fnt_rd(vid, (scrbyte << 3) | (yscr & 7)); // vid->font[(scrbyte << 3) | (yscr & 7)];
 			vidATMDoubleDot(vid,col);
 		}
 	}
@@ -931,6 +993,9 @@ static xVideoMode vidModeTab[] = {
 	{VGA_GRF_L, vga_glo_ini, cga_t40_dot, NULL, vga320_4bpp_line, NULL, cga_t40_frm},
 	{VGA_GRF_H, vga_ghi_ini, cga_t40_dot, NULL, vga640_4bpp_line, NULL, cga_t40_frm},
 	{VGA_GRF_256, vga_glo_ini, cga_lores_dot, NULL, vga256_line, NULL, cga_t40_frm},
+
+
+	{VID_PC98XX, NULL, upd7220_dot, NULL, upd7220_line, NULL, upd7220_frame},
 
 	{VID_UNKNOWN, NULL, vidDrawBorder, NULL, NULL, NULL, NULL}
 };

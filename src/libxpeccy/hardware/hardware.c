@@ -84,7 +84,7 @@ HardWare hwTab[] = {
 		zx_init,p1mMapMem,p1mOut,p1mIn,stdMRd,stdMWr,zx_irq,zx_ack,speReset,zx_sync,zx_keyp,zx_keyr,zx_vol
 	},{
 		HW_SCORP,HWG_ZX,"Scorpion","ZS Scorpion",16,MEM_256K | MEM_1M,1.0,NULL,16,zx_port_tab_s,
-		zx_init,scoMapMem,scoOut,scoIn,scoMRd,stdMWr,zx_irq,zx_ack,speReset,zx_sync,zx_keyp,zx_keyr,zx_vol
+		scrp_init,scoMapMem,scoOut,scoIn,scoMRd,stdMWr,zx_irq,zx_ack,speReset,zx_sync,zx_keyp,zx_keyr,zx_vol
 	},{
 		HW_ATM2,HWG_ZX,"ATM2","ATM Turbo 2+ (v7.10)",16,MEM_128K | MEM_256K | MEM_512K | MEM_1M,1.0,NULL,16,zx_port_tab_b,
 		zx_init,atm2MapMem,atm2Out,atm2In,stdMRd,stdMWr,zx_irq,zx_ack,atm2Reset,atm2_sync,atm2_keyp,atm2_keyr,zx_vol
@@ -144,11 +144,11 @@ HardWare hwTab[] = {
 		HW_IBM_PC,HWG_PC,"IBM PC","IBM PC",16,MEM_1M | MEM_2M | MEM_4M,1.0,&ibmLay,24,NULL,
 		ibm_init,ibm_mem_map,ibm_iowr,ibm_iord,ibm_mrd,ibm_mwr,ibm_irq,ibm_ack,ibm_reset,ibm_sync,ibm_keyp,ibm_keyr,ibm_vol
 	},{
-#if ISDEBUG
-		HW_PC9801,HWG_PC98XX,"NEC PC 9801","PC9801",16,MEM_1M,1.0,&pc98xxLay,20,NULL,
-		pc98xx_init,pc98xx_mem_map,pc98xx_iowr,pc98xx_iord,pc98xx_mrd,pc98xx_mwr,pc98xx_irq,NULL,pc98xx_reset,pc98xx_sync,NULL,NULL,pc98xx_vol
-#endif
+#if 0
+		HW_PC9801,HWG_PC98XX,"NEC PC-9801 (under dev)","PC9801",16,MEM_1M,1.0,&pc98xxLay,20,NULL,
+		pc98xx_init,pc98xx_mem_map,pc98xx_iowr,pc98xx_iord,pc98xx_mrd,pc98xx_mwr,pc98xx_irq,pc98xx_ack,pc98xx_reset,pc98xx_sync,NULL,NULL,pc98xx_vol
 	},{
+#endif
 		HW_NULL,HWG_NULL,NULL,NULL,16,0,1.0,NULL,16,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL		// eot
 	}
 };
